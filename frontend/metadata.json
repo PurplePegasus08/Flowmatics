@@ -1,0 +1,5 @@
+{
+  "name": "InsightFlow AI",
+  "description": "An intelligent data workspace for analysts to visualize, clean, and analyze datasets using Gemini AI.",
+  "requestFramePermissions": []
+}
