@@ -1,6 +1,7 @@
-import React from 'react';
-import { LayoutDashboard, Database, BarChart2, BrainCircuit, Settings, ChevronLeft, ChevronRight, Moon, Sun, LogOut, Command } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { LayoutDashboard, Database, BarChart2, BrainCircuit, Settings, ChevronLeft, ChevronRight, Moon, Sun, LogOut, Command, History, MessageSquare } from 'lucide-react';
 import { AppView, User } from '../types';
+import { getApiUrl } from '../config';
 
 interface SidebarProps {
   currentView: AppView;
@@ -12,19 +13,41 @@ interface SidebarProps {
   onNavigate: (view: AppView) => void;
   onOpenSettings: () => void;
   onLogout: () => void;
+  onLoadSession: (sessionId: string) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
-  currentView, 
+export const Sidebar: React.FC<SidebarProps> = ({
+  currentView,
   user,
-  isOpen, 
-  isDarkMode, 
-  onToggleTheme, 
-  onToggle, 
-  onNavigate, 
+  isOpen,
+  isDarkMode,
+  onToggleTheme,
+  onToggle,
+  onNavigate,
   onOpenSettings,
-  onLogout
+  onLogout,
+  onLoadSession
 }) => {
+  const [sessions, setSessions] = useState<{ id: string, title: string, timestamp: number }[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchSessions();
+    }
+  }, [isOpen]);
+
+  const fetchSessions = async () => {
+    try {
+      const res = await fetch(getApiUrl('/api/sessions'));
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data);
+      }
+    } catch (e) {
+      console.error("Failed to load sessions", e);
+    }
+  };
+
   const navItems = [
     { id: AppView.DASHBOARD, label: 'Workbench', icon: LayoutDashboard },
     { id: AppView.DATA, label: 'Data Hub', icon: Database },
@@ -33,7 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside 
+    <aside
       className={`${isOpen ? 'w-64' : 'w-20'} bg-white dark:bg-surface-800 border-r border-surface-200 dark:border-surface-700 flex flex-col h-full shrink-0 z-50 transition-all duration-300 ease-in-out relative`}
     >
       {/* Brand Header */}
@@ -57,11 +80,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             key={item.id}
             onClick={() => onNavigate(item.id)}
-            className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all group relative ${
-              currentView === item.id
+            className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all group relative ${currentView === item.id
                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold'
                 : 'text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700/50 hover:text-surface-900 dark:hover:text-surface-200'
-            } ${!isOpen && 'justify-center'}`}
+              } ${!isOpen && 'justify-center'}`}
           >
             <item.icon className={`w-5 h-5 shrink-0 ${currentView === item.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-surface-400 group-hover:text-surface-600 dark:group-hover:text-surface-300'}`} />
             {isOpen && <span className="text-[13px] tracking-tight">{item.label}</span>}
@@ -70,11 +92,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </button>
         ))}
+
+        {/* History Section */}
+        {isOpen && sessions.length > 0 && (
+          <div className="pt-6 pb-2">
+            <div className="px-3 mb-2 flex items-center gap-2 text-xs font-bold text-surface-400 dark:text-surface-500 uppercase tracking-wider">
+              <History className="w-3 h-3" />
+              <span>Recent Sessions</span>
+            </div>
+            <div className="space-y-1">
+              {sessions.slice(0, 5).map(session => (
+                <button
+                  key={session.id}
+                  onClick={() => onLoadSession(session.id)}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-surface-100 dark:hover:bg-surface-700/50 transition-colors group"
+                >
+                  <MessageSquare className="w-4 h-4 text-surface-400 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-surface-600 dark:text-surface-300 truncate">{session.title || "Untitled Session"}</p>
+                    <p className="text-[10px] text-surface-400">{new Date(session.timestamp * 1000).toLocaleDateString()}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Utilities */}
       <div className="px-3 py-6 border-t border-surface-100 dark:border-surface-700 space-y-1.5">
-        <button 
+        <button
           onClick={onToggleTheme}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-surface-500 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors ${!isOpen && 'justify-center'}`}
         >
@@ -82,7 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isOpen && <span className="text-xs font-medium">Appearance</span>}
         </button>
 
-        <button 
+        <button
           onClick={onOpenSettings}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-surface-500 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors ${!isOpen && 'justify-center'}`}
         >
@@ -100,7 +147,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isOpen && (
             <div className="flex flex-col min-w-0">
               <p className="text-[13px] font-bold text-surface-900 dark:text-white truncate leading-none mb-1">{user.name}</p>
-              <button 
+              <button
                 onClick={onLogout}
                 className="text-[10px] font-semibold text-surface-400 dark:text-surface-500 hover:text-red-500 flex items-center gap-1 transition-colors text-left uppercase tracking-wider"
               >
@@ -112,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Toggle Button - Repositioned for cleaner UI */}
-      <button 
+      <button
         onClick={onToggle}
         className="absolute -right-3 bottom-24 bg-white dark:bg-surface-700 border border-surface-200 dark:border-surface-600 text-surface-400 hover:text-indigo-600 rounded-full p-1.5 shadow-sm z-50 transition-all hover:scale-110 active:scale-95"
       >

@@ -3,15 +3,15 @@ import { DataRow, ChartConfig } from '../types';
 
 // Helper to calculate quartiles
 const getQuantile = (array: number[], quantile: number) => {
-    const sorted = [...array].sort((a, b) => a - b);
-    const pos = (sorted.length - 1) * quantile;
-    const base = Math.floor(pos);
-    const rest = pos - base;
-    if (sorted[base + 1] !== undefined) {
-        return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
-    } else {
-        return sorted[base];
-    }
+  const sorted = [...array].sort((a, b) => a - b);
+  const pos = (sorted.length - 1) * quantile;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sorted[base + 1] !== undefined) {
+    return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+  } else {
+    return sorted[base];
+  }
 };
 
 export const processChartData = (data: DataRow[], config: ChartConfig) => {
@@ -33,89 +33,109 @@ export const processChartData = (data: DataRow[], config: ChartConfig) => {
   // 1. HEATMAP & CONTOUR (2D Frequency)
   if (config.type === 'heatmap' || config.type === 'contour') {
     const xKey = config.xAxisKey;
-    const yKey = config.yAxisKeys?.[0]; 
-    if (!yKey) return []; 
+    const yKey = config.yAxisKeys?.[0];
+    if (!yKey) return [];
 
     const aggMap = new Map<string, number>();
     filteredSource.forEach(row => {
-        const xVal = String(row[xKey]);
-        const yVal = String(row[yKey]);
-        const key = `${xVal}###${yVal}`;
-        aggMap.set(key, (aggMap.get(key) || 0) + 1);
+      const xVal = String(row[xKey]);
+      const yVal = String(row[yKey]);
+      const key = `${xVal}###${yVal}`;
+      aggMap.set(key, (aggMap.get(key) || 0) + 1);
     });
 
     const result = Array.from(aggMap.entries()).map(([key, value]) => {
-        const [x, y] = key.split('###');
-        return { x, y, value, z: value };
+      const [x, y] = key.split('###');
+      return { x, y, value, z: value };
     });
     return result.slice(0, 500);
   }
 
   // 2. VENN DIAGRAM (Set Overlap)
   if (config.type === 'venn') {
-      const setAKey = config.xAxisKey;
-      const setBKey = config.yAxisKeys?.[0];
-      if (!setBKey) return [];
+    const setAKey = config.xAxisKey;
+    const setBKey = config.yAxisKeys?.[0];
+    if (!setBKey) return [];
 
-      let countA = 0;
-      let countB = 0;
-      let intersection = 0;
+    let countA = 0;
+    let countB = 0;
+    let intersection = 0;
 
-      filteredSource.forEach(row => {
-          const valA = row[setAKey];
-          const valB = row[setBKey];
-          const isA = valA !== null && valA !== false && valA !== 0 && valA !== '';
-          const isB = valB !== null && valB !== false && valB !== 0 && valB !== '';
-          if (isA && isB) intersection++;
-          else if (isA) countA++;
-          else if (isB) countB++;
-      });
+    filteredSource.forEach(row => {
+      const valA = row[setAKey];
+      const valB = row[setBKey];
+      const isA = valA !== null && valA !== false && valA !== 0 && valA !== '';
+      const isB = valB !== null && valB !== false && valB !== 0 && valB !== '';
+      if (isA && isB) intersection++;
+      else if (isA) countA++;
+      else if (isB) countB++;
+    });
 
-      return [
-          { name: 'A', value: countA, label: setAKey },
-          { name: 'B', value: countB, label: setBKey },
-          { name: 'Intersection', value: intersection, label: 'Both' }
-      ];
+    return [
+      { name: 'A', value: countA, label: setAKey },
+      { name: 'B', value: countB, label: setBKey },
+      { name: 'Intersection', value: intersection, label: 'Both' }
+    ];
   }
 
   // 3. BOX PLOT (Distribution Stats)
   if (config.type === 'box') {
-      const xKey = config.xAxisKey;
-      const yKey = config.yAxisKeys?.[0];
-      if (!yKey) return [];
-      const groupedValues: Record<string, number[]> = {};
+    const xKey = config.xAxisKey;
+    const yKey = config.yAxisKeys?.[0];
+    if (!yKey) return [];
+    const groupedValues: Record<string, number[]> = {};
 
-      filteredSource.forEach(row => {
-          const group = String(row[xKey]);
-          const val = Number(row[yKey]);
-          if (!isNaN(val)) {
-              if (!groupedValues[group]) groupedValues[group] = [];
-              groupedValues[group].push(val);
-          }
-      });
+    filteredSource.forEach(row => {
+      const group = String(row[xKey]);
+      const val = Number(row[yKey]);
+      if (!isNaN(val)) {
+        if (!groupedValues[group]) groupedValues[group] = [];
+        groupedValues[group].push(val);
+      }
+    });
 
-      return Object.entries(groupedValues).map(([name, values]) => {
-          if (values.length === 0) return null;
-          const min = Math.min(...values);
-          const max = Math.max(...values);
-          const q1 = getQuantile(values, 0.25);
-          const median = getQuantile(values, 0.5);
-          const q3 = getQuantile(values, 0.75);
-          return { name, min, q1, median, q3, max };
-      }).filter(Boolean);
+    return Object.entries(groupedValues).map(([name, values]) => {
+      if (values.length === 0) return null;
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const q1 = getQuantile(values, 0.25);
+      const median = getQuantile(values, 0.5);
+      const q3 = getQuantile(values, 0.75);
+      return { name, min, q1, median, q3, max };
+    }).filter(Boolean);
   }
 
   // 4. SCATTER & BUBBLE (Raw Data)
   if (config.type === 'scatter' || config.type === 'bubble') {
+    const xKey = config.xAxisKey;
+    const yKey = config.yAxisKeys?.[0] || '';
+
+    // Create mapping for non-numeric (categorical) values to enable plotting
+    const xUnique = Array.from(new Set(filteredSource.map(r => String(r[xKey])))).sort();
+    const yUnique = Array.from(new Set(filteredSource.map(r => String(r[yKey])))).sort();
+
     return filteredSource
-      .map(row => ({
-        ...row,
-        name: String(row[config.xAxisKey]),
-        x: Number(row[config.xAxisKey]),
-        y: Number(row[config.yAxisKeys?.[0] || '']),
-        z: config.zAxisKey ? Math.abs(Number(row[config.zAxisKey])) : 100
-      }))
-      .filter(pt => !isNaN(pt.x) && !isNaN(pt.y))
+      .map(row => {
+        const xRaw = row[xKey];
+        const yRaw = row[yKey];
+        const xNum = Number(xRaw);
+        const yNum = Number(yRaw);
+
+        // If not a number, map to index in unique sorted values
+        const x = isNaN(xNum) || xRaw === '' || xRaw === null ? xUnique.indexOf(String(xRaw)) : xNum;
+        const y = isNaN(yNum) || yRaw === '' || yRaw === null ? yUnique.indexOf(String(yRaw)) : yNum;
+
+        return {
+          ...row,
+          name: String(xRaw),
+          x,
+          y,
+          z: config.zAxisKey ? Math.abs(Number(row[config.zAxisKey])) : 100,
+          _xLabel: String(xRaw),
+          _yLabel: String(yRaw)
+        };
+      })
+      .filter(pt => typeof pt.x === 'number' && typeof pt.y === 'number')
       .slice(0, 1000);
   }
 

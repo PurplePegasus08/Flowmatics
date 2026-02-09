@@ -7,11 +7,11 @@ import { Dashboard } from './views/Dashboard';
 import { AuthView } from './components/AuthView';
 import { SettingsModal } from './components/SettingsModal';
 import { AppView, DataRow, ChartConfig, ChatMessage, DashboardItem, User } from './types';
-import { CheckCircle2, Info, Sparkles } from 'lucide-react';
 import Papa from 'papaparse';
 import config, { getApiUrl } from './config';
+import { NotificationProvider, useNotification } from './contexts/NotificationContext';
 
-function App() {
+function AppContent() {
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [data, setData] = useState<DataRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -19,8 +19,9 @@ function App() {
   const [activeFilters, setActiveFilters] = useState<Record<string, any[]>>({});
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [notification, setNotification] = useState<{ message: string, type: 'success' | 'info' } | null>(null);
   const [sessionId, setSessionId] = useState<string>("default");
+
+  const { notify } = useNotification();
 
   const [user, setUser] = useState<User | null>(() => {
     const savedUser = localStorage.getItem('insightflow_user');
@@ -41,13 +42,6 @@ function App() {
       localStorage.setItem('theme', 'light');
     }
   }, [isDarkMode]);
-
-  useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => setNotification(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     { id: '0', role: 'model', content: "Systems synchronized. Intelligence engine initialized. How shall we interrogate the data today?" }
@@ -74,10 +68,58 @@ function App() {
     setCurrentView(AppView.DASHBOARD);
   };
 
-  // Removed custom CSV parser - now using PapaParse
+  const handleLoadSession = async (sid: string) => {
+    try {
+      notify("Restoring session...", "info");
+
+      // 1. Get Session Details (History)
+      const sessionRes = await fetch(getApiUrl(`/api/session/${sid}`));
+      if (!sessionRes.ok) throw new Error("Failed to load session details");
+      const sessionData = await sessionRes.json();
+
+      // 2. Get Data Preview
+      const dataRes = await fetch(getApiUrl(`/api/preview/${sid}?limit=1000`));
+      if (!dataRes.ok) throw new Error("Failed to load dataset");
+      const dataContent = await dataRes.json();
+
+      // Update State
+      setSessionId(sid);
+
+      if (sessionData.history && sessionData.history.length > 0) {
+        // Map backend history to frontend format if needed, or assume compatible
+        // Backend stores raw Gemini history. Frontend uses { id, role, content }
+        // We'll trust the mapping or adjust if strictly typed.
+        // Assuming backend sends compatible list or we map it.
+        // Backend: { role: 'user'|'model', parts: [{text: ''}] }
+        // Frontend: { id, role, content }
+        const mappedMessages = sessionData.history.map((msg: any, idx: number) => ({
+          id: idx.toString(),
+          role: msg.role === 'user' ? 'user' : 'model',
+          content: msg.parts?.[0]?.text || ""
+        }));
+        setChatMessages(mappedMessages);
+      } else {
+        setChatMessages([{ id: '0', role: 'model', content: "Session restored. Ready for analysis." }]);
+      }
+
+      if (dataContent.rows && dataContent.rows.length > 0) {
+        setData(dataContent.rows);
+        setHeaders(Object.keys(dataContent.rows[0]));
+        setCurrentView(AppView.INSIGHTS); // Go to insights to see history
+      } else {
+        notify("Session loaded but no data found.", "info");
+      }
+
+      notify("Session restored successfully", "success");
+
+    } catch (e) {
+      console.error("Load session failed:", e);
+      notify("Failed to load session", "error");
+    }
+  };
 
   const handleFileUpload = async (file: File) => {
-    // Sync data to backend for REPL/Analysis
+    // Sync data to backend
     const formData = new FormData();
     formData.append('file', file);
 
@@ -89,7 +131,7 @@ function App() {
 
       if (!response.ok) {
         const error = await response.text();
-        setNotification({ message: `Upload failed: ${error}`, type: 'info' });
+        notify(`Upload failed: ${error}`, 'info');
         return;
       }
 
@@ -98,17 +140,14 @@ function App() {
 
       if (res.sessionId) {
         setSessionId(res.sessionId);
-        setNotification({
-          message: `Backend Session Initialized: ${res.sessionId.slice(0, 8)}`,
-          type: 'success'
-        });
+        notify(`Backend Session Initialized: ${res.sessionId.slice(0, 8)}`, 'success');
       }
     } catch (err) {
       console.error("Backend upload failed:", err);
-      setNotification({ message: 'Failed to upload to backend', type: 'info' });
+      notify('Failed to upload to backend', 'info');
     }
 
-    // Parse CSV with PapaParse (more reliable)
+    // Parse CSV with PapaParse locally for immediate UI update (could fetch preview instead)
     Papa.parse(file, {
       header: true,
       dynamicTyping: true,
@@ -116,7 +155,7 @@ function App() {
       complete: (results) => {
         if (results.errors.length > 0) {
           console.error('CSV parse errors:', results.errors);
-          setNotification({ message: 'CSV parsing had some errors', type: 'info' });
+          notify('CSV parsing had some errors', 'info');
         }
 
         const parsedData = results.data as DataRow[];
@@ -125,14 +164,11 @@ function App() {
         setHeaders(headers);
         setData(parsedData);
         setCurrentView(AppView.DATA);
-        setNotification({
-          message: `Database Ingested: ${parsedData.length.toLocaleString()} records.`,
-          type: 'success'
-        });
+        notify(`Database Ingested: ${parsedData.length.toLocaleString()} records.`, 'success');
       },
       error: (error) => {
         console.error('CSV parse error:', error);
-        setNotification({ message: `Failed to parse CSV: ${error.message}`, type: 'info' });
+        notify(`Failed to parse CSV: ${error.message}`, 'info');
       }
     });
   };
@@ -143,8 +179,8 @@ function App() {
       id: Date.now().toString(),
       x: 40, y: 40, width: 500, height: 400, zIndex: 10
     }]);
-    setNotification({ message: 'Insight Pinned to Workbench', type: 'success' });
-  }, []);
+    notify('Insight Pinned to Workbench', 'success');
+  }, [notify]);
 
   const handleRemoveFromDashboard = useCallback((id: string) => {
     setDashboardItems(prev => prev.filter(item => item.id !== id));
@@ -166,11 +202,11 @@ function App() {
       if (operation === 'remove_duplicates') {
         const seen = new Set();
         newData = newData.filter(r => { const s = JSON.stringify(r); if (seen.has(s)) return false; seen.add(s); return true; });
-        setNotification({ message: `Optimized Dataset: Removed ${before - newData.length} duplicates.`, type: 'info' });
+        notify(`Optimized Dataset: Removed ${before - newData.length} duplicates.`, 'info');
       }
       return newData;
     });
-  }, []);
+  }, [notify]);
 
   const handleRemoveData = useCallback(() => {
     setData([]);
@@ -178,8 +214,8 @@ function App() {
     setDashboardItems([]);
     setActiveFilters({});
     setSessionId("default");
-    setNotification({ message: 'Dataset purged from local intelligence core', type: 'info' });
-  }, []);
+    notify('Dataset purged from local intelligence core', 'info');
+  }, [notify]);
 
   if (!user) return <AuthView onLogin={handleLogin} isDarkMode={isDarkMode} onToggleTheme={() => setIsDarkMode(!isDarkMode)} />;
 
@@ -189,22 +225,10 @@ function App() {
         currentView={currentView} user={user} isOpen={isSidebarOpen} isDarkMode={isDarkMode}
         onToggleTheme={() => setIsDarkMode(!isDarkMode)} onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         onNavigate={setCurrentView} onOpenSettings={() => setIsSettingsOpen(true)} onLogout={handleLogout}
+        onLoadSession={handleLoadSession}
       />
 
       <main className="flex-1 flex flex-col min-w-0 transition-all relative overflow-hidden">
-        {/* Superior Notification System */}
-        {notification && (
-          <div className="absolute top-10 left-1/2 -translate-x-1/2 z-[100] animate-slide-up pointer-events-none">
-            <div className={`flex items-center gap-4 px-8 py-5 rounded-[2rem] shadow-2xl border backdrop-blur-2xl ${notification.type === 'success' ? 'bg-white/80 dark:bg-slate-900/80 border-indigo-100 dark:border-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'bg-white/80 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-              }`}>
-              <div className={`p-2 rounded-xl ${notification.type === 'success' ? 'bg-indigo-500 text-white' : 'bg-slate-500 text-white'}`}>
-                {notification.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <Info className="w-4 h-4" />}
-              </div>
-              <span className="text-xs font-black uppercase tracking-[0.15em]">{notification.message}</span>
-            </div>
-          </div>
-        )}
-
         <div className="flex-1 overflow-hidden animate-fade-in">
           {currentView === AppView.DASHBOARD && (
             <Dashboard data={data} isDarkMode={isDarkMode} headers={headers} items={dashboardItems} onUpdateItem={handleUpdateDashboardItem} onRemoveItem={handleRemoveFromDashboard} onNavigateToData={() => setCurrentView(AppView.DATA)} />
@@ -241,6 +265,14 @@ function App() {
 
       <SettingsModal isOpen={isSettingsOpen} isDarkMode={isDarkMode} onToggleDarkMode={() => setIsDarkMode(!isDarkMode)} onClose={() => setIsSettingsOpen(false)} />
     </div>
+  );
+}
+
+function App() {
+  return (
+    <NotificationProvider>
+      <AppContent />
+    </NotificationProvider>
   );
 }
 
