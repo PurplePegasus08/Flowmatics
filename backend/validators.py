@@ -19,7 +19,7 @@ class ChatRequest(BaseModel):
     @classmethod
     def validate_session_id(cls, v):
         """Validate session ID format (UUID-like)."""
-        if not v or len(v) < 8 or len(v) > 100:
+        if not v or len(v) < 7 or len(v) > 100:
             raise ValueError('Invalid session ID length')
         # Allow alphanumeric and hyphens only
         if not re.match(r'^[a-zA-Z0-9\-]+$', v):

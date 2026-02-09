@@ -1,55 +1,55 @@
 """
 FastAPI application with improved security, validation, and error handling.
+Refactored to use modular services.
 """
 import asyncio
 import uuid
 import io
 import json
-from typing import Dict
+from typing import Dict, List
 import numpy as np
+import pandas as pd
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Body, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-# Import backend modules
-from backend import (
-    build_graph, eda_node, execute_node, undo_node, export_node, upload_node,
-    AgentState, store, get_stats, exec_code
-)
+# Import new services
 from config import settings
 from logger import get_logger
 from validators import ChatRequest, ReplExecuteRequest, FileUploadValidator, sanitize_error_message
+from models import AgentState
+from storage import DiskStore
+
+from services.session_service import session_service
+from services.agent_service import agent_service
+from services.execution_service import exec_code
 
 # Setup logging
 logger = get_logger()
+store = DiskStore(base_path=settings.data_store_path)
 
 # Initialize FastAPI app
 app = FastAPI(
     title="InsightFlow AI API - Reloaded",
     description="AI-powered data analysis workspace",
-    version="1.0.0",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
-# Session storage
-sessions_meta: Dict[str, str] = {}  # session_id -> work_id
-sessions_state: Dict[str, AgentState] = {}
-sessions: Dict[str, asyncio.Queue[str]] = {}
-
-# Configure CORS with environment-based origins
+# Configure CORS - relaxed for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 logger.info(f"CORS configured with origins: {settings.allowed_origins}")
 
 
-# Background task for session cleanup
+# Background task for session cleanup (delegated to store for now, but could be in SessionService)
 async def cleanup_old_sessions():
     """Background task to clean up old sessions."""
     try:
@@ -63,7 +63,7 @@ async def cleanup_old_sessions():
 @app.on_event("startup")
 async def startup_event():
     """Run startup tasks."""
-    logger.info("Starting InsightFlow AI API...")
+    logger.info("Starting InsightFlow AI API (v2)...")
     logger.info(f"Storage path: {settings.data_store_path}")
     logger.info(f"Max file size: {settings.max_file_size_mb}MB")
     
@@ -78,9 +78,6 @@ async def upload(
 ):
     """
     Upload a CSV or JSON file for analysis.
-    
-    - **file**: CSV or JSON file (max size defined in config)
-    
     Returns session ID and preview data.
     """
     logger.info(f"Upload request: {file.filename} ({file.content_type})")
@@ -97,21 +94,19 @@ async def upload(
         if file.filename.endswith('.csv'):
             FileUploadValidator.validate_csv_content(content)
         
-        # Process upload
+        # Process upload via AgentService
         state = AgentState()
-        state = upload_node(state, content)
+        state = agent_service.upload(state, content)
         
         # Create session
         session_id = str(uuid.uuid4())
-        sessions[session_id] = asyncio.Queue()
-        sessions_meta[session_id] = state.work_id
-        sessions_state[session_id] = state
+        session_service.save_session(session_id, state)
         
         if state.error:
             logger.error(f"Upload processing failed: {state.error}")
             raise HTTPException(500, state.error)
             
-        logger.info(f"Upload successful: session={session_id}, rows={len(store.get_df(state.work_id))}")
+        logger.info(f"Upload successful: session={session_id}")
         
         # Build preview
         try:
@@ -123,7 +118,7 @@ async def upload(
             logger.warning(f"Preview generation failed: {e}")
             preview_rows = []
             total_rows = 0
-        
+            
         # Schedule cleanup in background
         if background_tasks:
             background_tasks.add_task(cleanup_old_sessions)
@@ -145,20 +140,15 @@ async def upload(
 
 @app.get('/api/preview/{session_id}', summary="Get data preview", tags=["Data Management"])
 async def preview(session_id: str, limit: int = 200):
-    """
-    Get preview of uploaded data.
-    
-    - **session_id**: Session identifier
-    - **limit**: Number of rows to return (max 1000)
-    """
-    if session_id not in sessions_meta:
+    """Get preview of uploaded data."""
+    state = session_service.load_session(session_id)
+    if not state or not state.work_id:
         raise HTTPException(404, "Session not found")
     
-    if limit > 1000:
-        limit = 1000
+    if limit > 1000: limit = 1000
     
     try:
-        df = store.get_df(sessions_meta[session_id])
+        df = store.get_df(state.work_id)
         df_safe = df.replace({np.nan: None, np.inf: None, -np.inf: None})
         
         if limit <= 0 or limit >= len(df_safe):
@@ -166,7 +156,6 @@ async def preview(session_id: str, limit: int = 200):
         else:
             rows = df_safe.head(limit).to_dict(orient='records')
         
-        logger.debug(f"Preview generated: session={session_id}, rows={len(rows)}")
         return {"rows": rows}
         
     except Exception as e:
@@ -177,12 +166,10 @@ async def preview(session_id: str, limit: int = 200):
 @app.get('/api/health', summary="Health check", tags=["System"])
 async def health():
     """Check API health status."""
-    storage_stats = store.get_stats()
-    
     return {
         "status": "ok",
-        "storage": storage_stats,
-        "sessions": len(sessions_meta),
+        "storage": store.get_stats(),
+        "sessions": len(session_service.list_sessions()),
         "config": {
             "max_file_size_mb": settings.max_file_size_mb,
             "session_ttl_hours": settings.session_ttl_hours,
@@ -192,17 +179,13 @@ async def health():
 
 @app.get('/api/download/{session_id}', summary="Download dataset", tags=["Data Management"])
 async def download_csv(session_id: str):
-    """
-    Download processed dataset as CSV.
-    
-    - **session_id**: Session identifier
-    """
-    if session_id not in sessions_meta:
-        logger.warning(f"Download failed: session {session_id} not found")
+    """Download processed dataset as CSV."""
+    state = session_service.load_session(session_id)
+    if not state or not state.work_id:
         raise HTTPException(404, "Session not found")
     
     try:
-        df = store.get_df(sessions_meta[session_id])
+        df = store.get_df(state.work_id)
         df_safe = df.replace({np.nan: None, np.inf: None, -np.inf: None})
         
         buf = io.StringIO()
@@ -213,7 +196,6 @@ async def download_csv(session_id: str):
             "Content-Disposition": f"attachment; filename=insightflow_data_{session_id[:8]}.csv"
         }
         
-        logger.info(f"Download: session={session_id}")
         return StreamingResponse(buf, media_type='text/csv', headers=headers)
         
     except Exception as e:
@@ -223,27 +205,16 @@ async def download_csv(session_id: str):
 
 @app.post('/api/repl/{session_id}', summary="Execute Python code", tags=["Analysis"])
 async def repl_execute(session_id: str, payload: dict = Body(...)):
-    """
-    Execute Python script in sandboxed environment.
-    
-    - **session_id**: Session identifier
-    - **payload**: {"script": "python code"}
-    """
-    logger.info(f"REPL request: session={session_id}")
-    
-    if not session_id or session_id not in sessions_meta:
+    """Execute Python script in sandboxed environment."""
+    state = session_service.load_session(session_id)
+    if not state or not state.work_id:
         raise HTTPException(404, "Session not found")
     
     try:
-        # Validate request
         request = ReplExecuteRequest(**payload)
         script = request.script
         
-        state = sessions_state.get(session_id)
-        if not state or not state.work_id:
-            raise HTTPException(400, "No active session or data")
-        
-        # Execute code
+        # Execute code via separate execution service
         df = store.get_df(state.work_id)
         new_df, err, stdout = exec_code(script, df)
         
@@ -251,12 +222,13 @@ async def repl_execute(session_id: str, payload: dict = Body(...)):
             logger.warning(f"REPL execution failed: {err}")
             return {"type": "error", "text": err}
         
-        # Save result
+        # Save result (update state)
         state.push_undo(f"REPL: {script[:60]}...")
         new_key = store.write_df(new_df)
         state.work_id = new_key
-        sessions_state[session_id] = state
-        sessions_meta[session_id] = new_key
+        
+        # PERSIST STATE
+        session_service.save_session(session_id, state)
         
         # Prepare response
         df_safe = new_df.replace({np.nan: None, np.inf: None, -np.inf: None})
@@ -266,12 +238,19 @@ async def repl_execute(session_id: str, payload: dict = Body(...)):
         if stdout:
             msg += f"\n\nOutput:\n{stdout}"
         
-        logger.info(f"REPL success: session={session_id}")
+        # Helper logging
+        def get_stats_local(wid):
+            try:
+                d = store.get_df(wid)
+                buf = io.StringIO(); d.info(buf=buf)
+                return buf.getvalue()
+            except: return ""
+
         return {
             "type": "repl",
             "text": msg,
             "sample": sample,
-            "stats": get_stats(state.work_id)
+            "stats": get_stats_local(state.work_id)
         }
         
     except HTTPException:
@@ -283,104 +262,62 @@ async def repl_execute(session_id: str, payload: dict = Body(...)):
 
 @app.post('/api/chat', summary="Chat with AI assistant", tags=["AI"])
 async def chat_endpoint(payload: dict = Body(...)):
-    """
-    Chat with AI assistant for data analysis.
-    
-    Request body:
-    ```json
-    {
-        "history": [...],
-        "dataContext": "...",
-        "modelName": "...",
-        "sessionId": "..."
-    }
-    ```
-    
-    Response:
-    ```json
-    {
-        "text": "AI response",
-        "functionCalls": [...]
-    }
-    ```
-    """
+    """Chat with AI assistant for data analysis."""
     try:
-        # Validate request
         request = ChatRequest(**payload)
         session_id = request.sessionId
         
-        logger.info(f"Chat request: session={session_id}")
+        # Load state
+        state = session_service.load_session(session_id)
+        if not state:
+            # Try to create a blank state if session ID is new (though upload usually handles this)
+            if session_id == "default":
+                state = AgentState()
+            else:
+                raise HTTPException(404, "Session not found")
         
-        # Extract user message from history
+        # Extract user message
         history = request.history
-        if not history:
-            raise HTTPException(400, "No input provided")
+        if not history: raise HTTPException(400, "No input provided")
         
         last_msg = history[-1]
         text = ""
         if last_msg.get("parts"):
             text = last_msg["parts"][0].get("text", "")
         
-        if not text:
-            raise HTTPException(400, "Empty message")
+        if not text: raise HTTPException(400, "Empty message")
         
         logger.debug(f"User message: {text[:100]}...")
         
-        # Restore or create state
-        state = sessions_state.get(session_id) or AgentState()
-        
-        # Sync history
+        # Update state with new inputs
         state.chat_history = history
-        
-        if not state.work_id:
-            work_id = sessions_meta.get(session_id, "")
-            if work_id:
-                state.work_id = work_id
-                # Only set stats if we don't have a specific user request context
-                if not text:
-                    state.user_message = get_stats(work_id)
-        
         state.next_node = "human_input"
         
-        # Parse special commands
+        # Command parsing
         if text.lower() in ("undo", "/undo"):
             state.user_message = "Undo requested"
             state.next_node = "undo"
         elif text.lower().startswith("/export"):
             parts = text.split()
-            if len(parts) > 1:
-                state.export_filename = parts[1]
+            if len(parts) > 1: state.export_filename = parts[1]
             state.next_node = "export"
         else:
             state.user_message = text
             state.next_node = "execute"
         
-        # Process nodes
-        tool = None
-        safety = 0
-        while state.next_node != "human_input" and safety < 20:
-            if state.next_node == "execute":
-                state = execute_node(state)
-                if state.last_tool:
-                    tool = state.last_tool
-            elif state.next_node == "eda":
-                state = eda_node(state)
-            elif state.next_node == "undo":
-                state = undo_node(state)
-            elif state.next_node == "export":
-                state = export_node(state)
-            else:
-                break
-            safety += 1
+        # RUN AGENT CYCLE
+        state = agent_service.run_cycle(state)
         
-        # Persist state
-        sessions_state[session_id] = state
+        # PERSIST STATE
+        session_service.save_session(session_id, state)
         
         resp = {"text": state.user_message, "functionCalls": []}
-        if tool:
-            resp["functionCalls"] = [tool]
+        if state.last_tool:
+            resp["functionCalls"] = [state.last_tool]
+            # Clear tool after sending to avoid re-sending? 
+            # Actually, agent service creates a new state object effectively in memory, 
+            # we should check if we want to clear it. For now, keep as is.
         
-        logger.info(f"Chat response generated: session={session_id}")
         return resp
         
     except HTTPException:
@@ -393,31 +330,39 @@ async def chat_endpoint(payload: dict = Body(...)):
         }
 
 
+@app.get('/api/session/{session_id}', summary="Get session details", tags=["Data Management"])
+async def get_session(session_id: str):
+    """Get full session state (history, metadata)."""
+    state = session_service.load_session(session_id)
+    if not state:
+        raise HTTPException(404, "Session not found")
+    
+    return {
+        "sessionId": session_id,
+        "history": state.chat_history,
+        "workId": state.work_id,
+        "lastMessage": state.user_message
+    }
+
 @app.delete('/api/session/{session_id}', summary="Delete session", tags=["Data Management"])
 async def delete_session(session_id: str):
-    """
-    Delete a session and its associated data.
-    
-    - **session_id**: Session identifier
-    """
+    """Delete a session."""
     logger.info(f"Delete session: {session_id}")
-    
     try:
-        # Remove from sessions
-        work_id = sessions_meta.pop(session_id, None)
-        sessions_state.pop(session_id, None)
-        sessions.pop(session_id, None)
-        
-        # Delete stored data
-        if work_id:
-            store.delete(work_id)
-        
+        session_service.delete_session(session_id)
         return {"status": "deleted", "sessionId": session_id}
-        
     except Exception as e:
         logger.error(f"Delete session error: {e}")
         raise HTTPException(500, sanitize_error_message(e))
 
+@app.get('/api/sessions', summary="List sessions", tags=["Data Management"])
+async def list_sessions():
+    """List all saved sessions."""
+    try:
+        return session_service.list_sessions()
+    except Exception as e:
+        logger.error(f"List sessions error: {e}")
+        return []
 
 if __name__ == "__main__":
     import uvicorn
