@@ -223,7 +223,7 @@ async def repl_execute(session_id: str, payload: dict = Body(...)):
             return {"type": "error", "text": err}
         
         # Save result (update state)
-        state.push_undo(f"REPL: {script[:60]}...")
+        agent_service.push_undo(state, f"REPL: {script[:60]}...")
         new_key = store.write_df(new_df)
         state.work_id = new_key
         

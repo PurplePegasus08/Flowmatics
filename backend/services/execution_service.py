@@ -1,7 +1,8 @@
 import io
-import signal
 import sys
-from contextlib import redirect_stdout, contextmanager
+import multiprocessing
+import traceback
+from contextlib import redirect_stdout
 from typing import Tuple, Optional, Any, Dict
 import pandas as pd
 import numpy as np
@@ -14,29 +15,6 @@ from logger import get_logger
 logger = get_logger()
 
 # ---------- Secure Code Execution ----------
-
-class TimeoutException(Exception):
-    """Exception raised when code execution times out."""
-    pass
-
-@contextmanager
-def time_limit(seconds: int):
-    """Context manager for timing out code execution."""
-    def signal_handler(signum, frame):
-        raise TimeoutException("Code execution timed out")
-    
-    # Note: signal.alarm only works on Unix systems
-    import platform
-    if platform.system() != 'Windows':
-        signal.signal(signal.SIGALRM, signal_handler)
-        signal.alarm(seconds)
-        try:
-            yield
-        finally:
-            signal.alarm(0)
-    else:
-        # For Windows, just yield without timeout (or use threading approach if critical)
-        yield
 
 SAFE_BUILTINS = {
     "len": len,
@@ -86,19 +64,10 @@ def validate_code(code: str) -> Tuple[bool, str]:
     
     return True, ""
 
-def exec_code(code: str, df: pd.DataFrame) -> Tuple[pd.DataFrame, Optional[str], str]:
+def _execute_script(code: str, df: pd.DataFrame, return_dict: Dict):
     """
-    Execute Python code with security constraints.
-    Returns: (result_df, error_message, stdout_output)
+    Worker function to execute script in a separate process.
     """
-    logger.info(f"Executing code (length: {len(code)})")
-    
-    # Validate code
-    is_valid, error_msg = validate_code(code)
-    if not is_valid:
-        logger.warning(f"Code validation failed: {error_msg}")
-        return df, error_msg, ""
-    
     output = io.StringIO()
     
     try:
@@ -121,32 +90,75 @@ def exec_code(code: str, df: pd.DataFrame) -> Tuple[pd.DataFrame, Optional[str],
             "df": df.copy(),
         }
         
-        # Execute with timeout
+        # Execute code capturing stdout
         with redirect_stdout(output):
-            try:
-                with time_limit(settings.code_exec_timeout_seconds):
-                    exec(code, safe_globals, safe_locals)
-            except TimeoutException as e:
-                return df, str(e), output.getvalue()
-        
-        captured = output.getvalue()
-        
+            exec(code, safe_globals, safe_locals)
+            
         # Verify df still exists and is valid
         if "df" not in safe_locals:
-            return df, "Code must define 'df' variable", captured
+            return_dict["error"] = "Code must define 'df' variable"
+            return_dict["stdout"] = output.getvalue()
+            return
         
         result_df = safe_locals["df"]
         
         if not isinstance(result_df, pd.DataFrame):
-            return df, "Variable 'df' must be a DataFrame", captured
+            return_dict["error"] = "Variable 'df' must be a DataFrame"
+            return_dict["stdout"] = output.getvalue()
+            return
+
+        return_dict["df"] = result_df
+        return_dict["stdout"] = output.getvalue()
+        return_dict["success"] = True
         
-        logger.info("Code executed successfully")
-        return result_df, None, captured
+    except Exception:
+        # Capture full traceback
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        error_msg = f"{exc_type.__name__}: {str(exc_value)}"
+        return_dict["error"] = error_msg
+        return_dict["stdout"] = output.getvalue()
+
+def exec_code(code: str, df: pd.DataFrame) -> Tuple[pd.DataFrame, Optional[str], str]:
+    """
+    Execute Python code in a separate process with timeout.
+    Returns: (result_df, error_message, stdout_output)
+    """
+    logger.info(f"Executing code (length: {len(code)})")
+    
+    # Validate code
+    is_valid, error_msg = validate_code(code)
+    if not is_valid:
+        logger.warning(f"Code validation failed: {error_msg}")
+        return df, error_msg, ""
+    
+    # Use multiprocessing Manager to share results
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+    return_dict["success"] = False
+    
+    # Create process
+    p = multiprocessing.Process(target=_execute_script, args=(code, df, return_dict))
+    
+    try:
+        p.start()
+        p.join(timeout=settings.code_exec_timeout_seconds)
+        
+        if p.is_alive():
+            logger.error("Code execution timed out - killing process")
+            p.terminate()
+            p.join()
+            return df, f"Execution timed out after {settings.code_exec_timeout_seconds} seconds", ""
+            
+        if not return_dict.get("success"):
+            error = return_dict.get("error", "Unknown execution error")
+            stdout = return_dict.get("stdout", "")
+            return df, error, stdout
+            
+        return return_dict["df"], None, return_dict["stdout"]
         
     except Exception as e:
-        error_msg = f"{type(e).__name__}: {str(e)}"
-        logger.error(f"Code execution error: {error_msg}")
-        return df, error_msg, output.getvalue()
+        logger.error(f"Execution wrapper error: {e}")
+        return df, str(e), ""
 
 def compare_dataframes(df_old: pd.DataFrame, df_new: pd.DataFrame) -> str:
     """

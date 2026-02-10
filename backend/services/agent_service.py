@@ -11,7 +11,7 @@ from config import settings
 from logger import get_logger
 from storage import DiskStore
 from cache import llm_cache
-from models import AgentState
+from models import AgentState, UndoEntry
 from services.execution_service import exec_code, compare_dataframes
 
 logger = get_logger()
@@ -133,9 +133,28 @@ class AgentService:
         state.next_node = "human_input"
         return state
 
+    def push_undo(self, state: AgentState, desc: str):
+        """Save current state to undo history."""
+        if state.work_id:
+            try:
+                # Create a snapshot by copying the current dataframe
+                df = store.get_df(state.work_id)
+                snapshot_key = store.write_df(df)
+                state.history.append(UndoEntry(description=desc, snapshot_key=snapshot_key))
+                logger.debug(f"Undo snapshot created: {desc}")
+            except Exception as e:
+                logger.error(f"Failed to create undo snapshot: {e}")
+
     def undo(self, state: AgentState) -> AgentState:
         logger.info("Undo operation")
-        state.user_message = state.undo()
+        if not state.history:
+            state.user_message = "Nothing to undo."
+        else:
+            entry = state.history.pop()
+            state.work_id = entry.snapshot_key
+            state.user_message = f"Undone: {entry.description}"
+            logger.info(f"Undone: {entry.description}")
+        
         state.next_node = "eda"
         return state
 
@@ -227,7 +246,8 @@ class AgentService:
                     "name": "runPythonAnalysis",
                     "args": {"script": content, "explanation": res.get("explanation", "")}
                 }
-                state.push_undo(f"Code: {content[:60]}...")
+                # Updated to use self.push_undo instead of state.push_undo
+                self.push_undo(state, f"Code: {content[:60]}...")
                 df = store.get_df(state.work_id)
                 new_df, err, stdout = exec_code(content, df)
                 
