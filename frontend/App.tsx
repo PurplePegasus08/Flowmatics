@@ -7,7 +7,7 @@ import { Dashboard } from './views/Dashboard';
 import { AuthView } from './components/AuthView';
 import { SettingsModal } from './components/SettingsModal';
 import { AppView, DataRow, ChartConfig, ChatMessage, DashboardItem, User } from './types';
-import Papa from 'papaparse';
+
 import config, { getApiUrl } from './config';
 import { NotificationProvider, useNotification } from './contexts/NotificationContext';
 
@@ -140,37 +140,22 @@ function AppContent() {
 
       if (res.sessionId) {
         setSessionId(res.sessionId);
-        notify(`Backend Session Initialized: ${res.sessionId.slice(0, 8)}`, 'success');
+
+        if (res.preview && res.preview.length > 0) {
+          setData(res.preview);
+          setHeaders(Object.keys(res.preview[0]));
+          setCurrentView(AppView.DATA);
+          notify(`Dataset Uploaded: ${res.totalRows?.toLocaleString() || 'Many'} records.`, 'success');
+        } else {
+          notify('Upload successful but no data preview returned', 'info');
+        }
       }
     } catch (err) {
       console.error("Backend upload failed:", err);
       notify('Failed to upload to backend', 'info');
     }
 
-    // Parse CSV with PapaParse locally for immediate UI update (could fetch preview instead)
-    Papa.parse(file, {
-      header: true,
-      dynamicTyping: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        if (results.errors.length > 0) {
-          console.error('CSV parse errors:', results.errors);
-          notify('CSV parsing had some errors', 'info');
-        }
 
-        const parsedData = results.data as DataRow[];
-        const headers = results.meta.fields || [];
-
-        setHeaders(headers);
-        setData(parsedData);
-        setCurrentView(AppView.DATA);
-        notify(`Database Ingested: ${parsedData.length.toLocaleString()} records.`, 'success');
-      },
-      error: (error) => {
-        console.error('CSV parse error:', error);
-        notify(`Failed to parse CSV: ${error.message}`, 'info');
-      }
-    });
   };
 
   const handleAddToDashboard = useCallback((config: ChartConfig) => {
