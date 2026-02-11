@@ -23,6 +23,8 @@ from storage import DiskStore
 from services.session_service import session_service
 from services.agent_service import agent_service
 from services.execution_service import exec_code
+from services.processing_service import processing_service
+from services.dashboard_service import dashboard_service
 
 # Setup logging
 logger = get_logger()
@@ -96,7 +98,7 @@ async def upload(
         
         # Process upload via AgentService
         state = AgentState()
-        state = agent_service.upload(state, content)
+        state = agent_service.upload(state, content, file.filename)
         
         # Create session
         session_id = str(uuid.uuid4())
@@ -260,6 +262,90 @@ async def repl_execute(session_id: str, payload: dict = Body(...)):
         return {"type": "error", "text": sanitize_error_message(e)}
 
 
+# --- New Processing Endpoints ---
+
+@app.post("/api/process/{action}/{session_id}", summary="Process data", tags=["Processing"])
+async def process_data(action: str, session_id: str, payload: dict = Body(...)):
+    """
+    Apply structured processing to the dataset.
+    Actions: impute, filter, feature_engineer
+    """
+    state = session_service.load_session(session_id)
+    if not state or not state.work_id:
+        raise HTTPException(404, "Session not found")
+
+    try:
+        df = store.get_df(state.work_id)
+        new_df = df
+        
+        cols = payload.get("columns", [])
+        
+        # Dispatch based on action
+        if action == "impute":
+            strategy = payload.get("strategy", "mean")
+            fill_value = payload.get("fillValue")
+            agent_service.push_undo(state, f"Impute {strategy} on {cols}")
+            new_df = processing_service.impute_missing(df, cols, strategy, fill_value)
+            
+        elif action == "remove_duplicates":
+            agent_service.push_undo(state, "Remove Duplicates")
+            new_df = processing_service.remove_duplicates(df, cols if cols else None)
+            
+        elif action == "filter_outliers":
+            method = payload.get("method", "iqr")
+            threshold = float(payload.get("threshold", 1.5))
+            col = cols[0] if cols else None
+            if col:
+                agent_service.push_undo(state, f"Filter outliers ({method}) on {col}")
+                new_df = processing_service.filter_outliers(df, col, method, threshold)
+                
+        elif action == "normalize":
+            method = payload.get("method", "minmax")
+            agent_service.push_undo(state, f"Normalize ({method}) on {cols}")
+            new_df = processing_service.normalize_data(df, cols, method)
+            
+        elif action == "encode":
+            method = payload.get("method", "onehot")
+            agent_service.push_undo(state, f"Encode ({method}) on {cols}")
+            new_df = processing_service.encode_categorical(df, cols, method)
+            
+        else:
+            raise HTTPException(400, f"Unknown action: {action}")
+
+        # Save result
+        if new_df is not df:
+            new_key = store.write_df(new_df)
+            state.work_id = new_key
+            session_service.save_session(session_id, state)
+            
+        return {
+            "status": "success",
+            "rows": len(new_df),
+            "columns": len(new_df.columns),
+            "sample": new_df.replace({np.nan: None, np.inf: None, -np.inf: None}).head(5).to_dict(orient='records')
+        }
+
+    except Exception as e:
+        logger.error(f"Processing error: {e}")
+        raise HTTPException(500, sanitize_error_message(e))
+
+
+@app.get("/api/dashboard/generate/{session_id}", summary="Generate dashboard", tags=["Dashboard"])
+async def generate_dashboard(session_id: str):
+    """Generate suggested dashboard configuration."""
+    state = session_service.load_session(session_id)
+    if not state or not state.work_id:
+        raise HTTPException(404, "Session not found")
+        
+    try:
+        df = store.get_df(state.work_id)
+        charts = dashboard_service.generate_dashboard(df)
+        return {"charts": charts}
+    except Exception as e:
+        logger.error(f"Dashboard gen error: {e}")
+        raise HTTPException(500, sanitize_error_message(e))
+
+
 @app.post('/api/chat', summary="Chat with AI assistant", tags=["AI"])
 async def chat_endpoint(payload: dict = Body(...)):
     """Chat with AI assistant for data analysis."""
@@ -353,6 +439,20 @@ async def delete_session(session_id: str):
         return {"status": "deleted", "sessionId": session_id}
     except Exception as e:
         logger.error(f"Delete session error: {e}")
+        raise HTTPException(500, sanitize_error_message(e))
+
+@app.put('/api/session/{session_id}/rename', summary="Rename session", tags=["Data Management"])
+async def rename_session(session_id: str, payload: dict = Body(...)):
+    """Rename a session."""
+    new_title = payload.get("title")
+    if not new_title:
+        raise HTTPException(400, "Title is required")
+        
+    try:
+        session_service.rename_session(session_id, new_title)
+        return {"status": "renamed", "sessionId": session_id, "title": new_title}
+    except Exception as e:
+        logger.error(f"Rename session error: {e}")
         raise HTTPException(500, sanitize_error_message(e))
 
 @app.get('/api/sessions', summary="List sessions", tags=["Data Management"])

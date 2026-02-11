@@ -27,7 +27,7 @@ class Settings(BaseModel):
     # File Upload
     max_file_size_mb: int = Field(default=1000, env='MAX_FILE_SIZE_MB')
     allowed_file_types: List[str] = Field(
-        default=[".csv", ".json"],
+        default=[".csv", ".json", ".xlsx"],
         env='ALLOWED_FILE_TYPES'
     )
     

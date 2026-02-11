@@ -113,10 +113,18 @@ class AgentService:
 **Now provide your response as JSON:**"""
         return prompt
 
-    def upload(self, state: AgentState, file_content: bytes) -> AgentState:
+    def upload(self, state: AgentState, file_content: bytes, filename: str = "data.csv") -> AgentState:
         try:
-            logger.info("Processing file upload")
-            df = pd.read_csv(io.StringIO(file_content.decode("utf-8")))
+            logger.info(f"Processing file upload: {filename}")
+            if filename.endswith('.xlsx') or filename.endswith('.xls'):
+                df = pd.read_excel(io.BytesIO(file_content))
+            else:
+                # Default to CSV
+                try:
+                    df = pd.read_csv(io.StringIO(file_content.decode("utf-8")))
+                except UnicodeDecodeError:
+                    # Fallback for non-utf8 CSVs
+                    df = pd.read_csv(io.BytesIO(file_content), encoding='latin1')
             
             state.raw_id = store.write_df(df)
             state.work_id = state.raw_id

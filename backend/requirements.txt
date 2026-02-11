@@ -17,3 +17,4 @@ pytest
 scikit-learn
 tabulate
 scikit-learn
+openpyxl

@@ -63,6 +63,26 @@ class SessionService:
                         logger.warning(f"Skipping corrupt session {sid}: {e}")
         self._save_index(index)
 
+    def rename_session(self, session_id: str, new_title: str):
+        """Rename a session in the index."""
+        try:
+            index = self._load_index()
+            if session_id in index:
+                index[session_id]["title"] = new_title[:50]
+                self._save_index(index)
+                
+                # Also update the actual session file if possible, but index is source of truth for lists
+                try:
+                    state = self.load_session(session_id)
+                    if state:
+                        state.user_message = new_title # loosely map title to user_message or add a title field
+                        self.save_session(session_id, state)
+                except:
+                    pass
+        except Exception as e:
+            logger.error(f"Failed to rename session {session_id}: {e}")
+            raise
+
     def _update_index(self, session_id: str, state: AgentState):
         """Update a single entry in the index."""
         try:
