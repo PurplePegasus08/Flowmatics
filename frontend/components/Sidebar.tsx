@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Database, BarChart2, BrainCircuit, Settings, ChevronLeft, ChevronRight, Moon, Sun, LogOut, Command, History, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, Database, BarChart2, BrainCircuit, Settings, ChevronLeft, ChevronRight, Moon, Sun, LogOut, History, MessageSquare, Pen, Trash2 } from 'lucide-react';
 import { AppView, User } from '../types';
 import { getApiUrl } from '../config';
 
@@ -14,6 +14,8 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onLogout: () => void;
   onLoadSession: (sessionId: string) => void;
+  onRenameSession: (sessionId: string, newTitle: string) => Promise<void>;
+  onDeleteSession: (sessionId: string) => Promise<void>;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -26,9 +28,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigate,
   onOpenSettings,
   onLogout,
-  onLoadSession
+  onLoadSession,
+  onRenameSession,
+  onDeleteSession
 }) => {
   const [sessions, setSessions] = useState<{ id: string, title: string, timestamp: number }[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -61,9 +67,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     >
       {/* Brand Header */}
       <div className={`h-20 px-6 flex items-center gap-3 ${!isOpen && 'justify-center px-0'}`}>
-        <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 shadow-soft">
-          <Command className="text-white w-6 h-6" />
-        </div>
+        <img
+          src="/logo.png"
+          alt="Logo"
+          className="w-10 h-10 rounded-xl object-cover shadow-soft"
+        />
         {isOpen && (
           <div className="flex flex-col">
             <h1 className="font-bold text-base text-surface-900 dark:text-white leading-tight">
@@ -81,8 +89,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             key={item.id}
             onClick={() => onNavigate(item.id)}
             className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all group relative ${currentView === item.id
-                ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold'
-                : 'text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700/50 hover:text-surface-900 dark:hover:text-surface-200'
+              ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold'
+              : 'text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700/50 hover:text-surface-900 dark:hover:text-surface-200'
               } ${!isOpen && 'justify-center'}`}
           >
             <item.icon className={`w-5 h-5 shrink-0 ${currentView === item.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-surface-400 group-hover:text-surface-600 dark:group-hover:text-surface-300'}`} />
@@ -93,8 +101,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         ))}
 
-        {/* History Section */}
-        {isOpen && sessions.length > 0 && (
+        {/* History Section - Only visible in Copilot/Insights view */}
+        {isOpen && currentView === AppView.INSIGHTS && sessions.length > 0 && (
           <div className="pt-6 pb-2">
             <div className="px-3 mb-2 flex items-center gap-2 text-xs font-bold text-surface-400 dark:text-surface-500 uppercase tracking-wider">
               <History className="w-3 h-3" />
@@ -102,17 +110,69 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div className="space-y-1">
               {sessions.slice(0, 5).map(session => (
-                <button
-                  key={session.id}
-                  onClick={() => onLoadSession(session.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-surface-100 dark:hover:bg-surface-700/50 transition-colors group"
-                >
-                  <MessageSquare className="w-4 h-4 text-surface-400 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-surface-600 dark:text-surface-300 truncate">{session.title || "Untitled Session"}</p>
-                    <p className="text-[10px] text-surface-400">{new Date(session.timestamp * 1000).toLocaleDateString()}</p>
-                  </div>
-                </button>
+                <div key={session.id} className="group relative">
+                  <button
+                    onClick={() => onLoadSession(session.id)}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-surface-100 dark:hover:bg-surface-700/50 transition-colors pr-8"
+                  >
+                    <MessageSquare className="w-4 h-4 text-surface-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      {editingId === session.id ? (
+                        <input
+                          autoFocus
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter') {
+                              await onRenameSession(session.id, editTitle);
+                              setEditingId(null);
+                              fetchSessions(); // Refresh list after rename
+                            } else if (e.key === 'Escape') {
+                              setEditingId(null);
+                            }
+                          }}
+                          onBlur={() => setEditingId(null)}
+                          className="w-full bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-600 rounded px-1 py-0.5 text-xs text-surface-900 dark:text-white outline-none focus:ring-1 focus:ring-indigo-500"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <p className="text-sm text-surface-600 dark:text-surface-300 truncate">{session.title || "Untitled Session"}</p>
+                      )}
+                      <p className="text-[10px] text-surface-400">{new Date(session.timestamp * 1000).toLocaleDateString()}</p>
+                    </div>
+                  </button>
+
+                  {/* Action Buttons - Only visible in Copilot view and on hover */}
+                  {currentView === AppView.INSIGHTS && !editingId && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setEditingId(session.id);
+                          setEditTitle(session.title || "Untitled Session");
+                          // Note: Rename is triggered on Enter/Save, not here. 
+                          // But we need to update the save handler below inside the input.
+                        }}
+                        className="p-1 text-surface-400 hover:text-indigo-600 hover:bg-surface-200 dark:hover:bg-surface-600 rounded"
+                        title="Rename"
+                      >
+                        <Pen className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await onDeleteSession(session.id);
+                          fetchSessions(); // Refresh list after delete
+                        }}
+                        className="p-1 text-surface-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </div>

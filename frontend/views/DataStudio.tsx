@@ -14,12 +14,14 @@ interface DataStudioProps {
   activeFilters: Record<string, any[]>;
   setActiveFilters: (filters: Record<string, any[]>) => void;
   onFileUpload: (file: File) => void;
-  onCleanData: (operation: string, column?: string) => void;
+
+  onCleanData: (operation: string, column?: string) => void; // Legacy, kept for compatibility if needed, but onProcessData is preferred
+  onProcessData: (action: string, payload: any) => Promise<void>;
   onRemoveData: () => void;
 }
 
 export const DataStudio: React.FC<DataStudioProps> = ({
-  data, headers, onFileUpload, onCleanData, activeFilters, setActiveFilters, onRemoveData
+  data, headers, onFileUpload, onCleanData, onProcessData, activeFilters, setActiveFilters, onRemoveData
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -27,6 +29,10 @@ export const DataStudio: React.FC<DataStudioProps> = ({
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [showSegmenter, setShowSegmenter] = useState(false);
+  const [showProcessor, setShowProcessor] = useState(false); // New state for Processor menu
+  const [processingAction, setProcessingAction] = useState<string | null>(null); // 'impute', 'outliers', etc.
+  const [processingCol, setProcessingCol] = useState<string>('');
+  const [processingStrategy, setProcessingStrategy] = useState<string>('mean');
   const [segmentColumn, setSegmentColumn] = useState<string>('');
   const [openFilterDropdown, setOpenFilterDropdown] = useState<string | null>(null);
 

@@ -12,7 +12,9 @@ interface DashboardProps {
   items: DashboardItem[];
   onUpdateItem: (id: string, updates: Partial<DashboardItem>) => void;
   onRemoveItem: (id: string) => void;
+
   onNavigateToData: () => void;
+  onAutoGenerate: () => void;
 }
 
 interface AlignmentGuide {
@@ -187,7 +189,7 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
   return null;
 });
 
-export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode, items, onUpdateItem, onRemoveItem, onNavigateToData }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode, items, onUpdateItem, onRemoveItem, onNavigateToData, onAutoGenerate }) => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
@@ -313,6 +315,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode,
             className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all shadow-md ml-2"
           >
             <Download className="w-4 h-4" /> Snapshot
+          </button>
+          <button
+            onClick={onAutoGenerate}
+            className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all shadow-md ml-2"
+          >
+            <Sparkles className="w-4 h-4" /> Auto-Generate
           </button>
         </div>
       </header>
