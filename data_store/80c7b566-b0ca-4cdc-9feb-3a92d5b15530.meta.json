@@ -1,0 +1,11 @@
+{
+  "key": "80c7b566-b0ca-4cdc-9feb-3a92d5b15530",
+  "created_at": "2026-02-23T00:53:55.338160",
+  "rows": 3,
+  "columns": 2,
+  "size_bytes": 2207,
+  "column_names": [
+    "value",
+    "doubled"
+  ]
+}

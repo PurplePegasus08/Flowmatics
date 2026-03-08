@@ -139,8 +139,105 @@ export const processChartData = (data: DataRow[], config: ChartConfig) => {
       .slice(0, 1000);
   }
 
-  // 5. AGGREGATION (Bar, Line, Area, Pie, Doughnut)
-  const aggType = config.aggregation || 'sum';
+  // 5. RADAR CHART (Multivariate Comparison)
+  if (config.type === 'radar') {
+    const xKey = config.xAxisKey;
+    const yKeys = config.yAxisKeys || [];
+    if (yKeys.length === 0) return [];
+
+    const groupedData: Record<string, any> = {};
+    filteredSource.forEach(row => {
+      const xVal = String(row[xKey]);
+      if (!groupedData[xVal]) {
+        groupedData[xVal] = { name: xVal };
+        yKeys.forEach(k => groupedData[xVal][k] = 0);
+        groupedData[xVal]._count = 0;
+      }
+      groupedData[xVal]._count++;
+      yKeys.forEach(k => {
+        const val = Number(row[k]);
+        if (!isNaN(val)) groupedData[xVal][k] += val;
+      });
+    });
+
+    return Object.values(groupedData).map(item => {
+      const result: any = { name: item.name };
+      yKeys.forEach(k => {
+        result[k] = config.aggregation === 'avg' ? Number((item[k] / item._count).toFixed(2)) : item[k];
+      });
+      return result;
+    }).slice(0, 50);
+  }
+
+  // 6. TREEMAP (Hierarchical Data)
+  if (config.type === 'treemap') {
+    const xKey = config.xAxisKey;
+    const yKey = config.yAxisKeys?.[0];
+
+    const aggMap = new Map<string, number>();
+    filteredSource.forEach(row => {
+      const xVal = String(row[xKey]);
+      const val = yKey ? Number(row[yKey]) : 1;
+      aggMap.set(xVal, (aggMap.get(xVal) || 0) + (isNaN(val) ? 0 : val));
+    });
+
+    return Array.from(aggMap.entries()).map(([name, value]) => ({
+      name,
+      value
+    })).sort((a, b) => b.value - a.value).slice(0, 50);
+  }
+
+  // 7. HEATMAP MATRIX (Categorical x Categorical x Numeric)
+  if (config.type === 'heatmap_matrix') {
+    const xKey = config.xAxisKey;
+    const yKey = config.yAxisKeys?.[0];
+    const dataKey = config.yAxisKeys?.[1]; // Metric to aggregate
+
+    if (!yKey) return [];
+
+    const matrixMap = new Map<string, { sum: number, count: number }>();
+    const xSet = new Set<string>();
+    const ySet = new Set<string>();
+
+    filteredSource.forEach(row => {
+      const xVal = String(row[xKey]);
+      const yVal = String(row[yKey]);
+      const val = dataKey ? Number(row[dataKey]) : 1;
+
+      xSet.add(xVal);
+      ySet.add(yVal);
+
+      const key = `${xVal}###${yVal}`;
+      const entry = matrixMap.get(key) || { sum: 0, count: 0 };
+      if (!isNaN(val)) {
+        entry.sum += val;
+        entry.count += 1;
+      }
+      matrixMap.set(key, entry);
+    });
+
+    const xLabels = Array.from(xSet).sort().slice(0, 15); // Limit matrix size for readability
+    const yLabels = Array.from(ySet).sort().slice(0, 15);
+
+    const result: any[] = [];
+    yLabels.forEach(y => {
+      const row: any = { name: y };
+      xLabels.forEach(x => {
+        const entry = matrixMap.get(`${x}###${y}`);
+        if (entry) {
+          row[x] = config.aggregation === 'avg' ? Number((entry.sum / entry.count).toFixed(2)) : entry.sum;
+        } else {
+          row[x] = 0;
+        }
+      });
+      result.push(row);
+    });
+
+    return result;
+  }
+
+  // 8. AGGREGATION (Bar, Line, Area, Pie, StepLine)
+  const aggType = config.aggregation || 'avg';
   const groupedData: Record<string, any> = {};
 
   filteredSource.forEach(row => {

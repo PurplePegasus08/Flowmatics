@@ -1,0 +1,12 @@
+{
+  "key": "df110918-c7b9-4925-bc34-dd5c691f05fc",
+  "created_at": "2026-02-23T00:52:43.098967",
+  "rows": 2,
+  "columns": 3,
+  "size_bytes": 2570,
+  "column_names": [
+    "name",
+    "age",
+    "city"
+  ]
+}

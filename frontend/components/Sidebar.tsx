@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Database, BarChart2, BrainCircuit, Settings, ChevronLeft, ChevronRight, Moon, Sun, LogOut, History, MessageSquare, Pen, Trash2 } from 'lucide-react';
+import { LayoutDashboard, Database, BarChart2, BrainCircuit, Settings, ChevronLeft, ChevronRight, Moon, Sun, LogOut, History, MessageSquare, Pen, Trash2, Cloud, Cpu } from 'lucide-react';
+import { LLMSelector } from './LLMSelector';
 import { AppView, User } from '../types';
-import { getApiUrl } from '../config';
+import { apiClient } from '../services/apiClient';
 
 interface SidebarProps {
   currentView: AppView;
@@ -44,11 +45,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const fetchSessions = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/sessions'));
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data);
-      }
+      const data: any = await apiClient.get('/api/sessions');
+      setSessions(data);
     } catch (e) {
       console.error("Failed to load sessions", e);
     }
@@ -178,6 +176,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
       </nav>
+
+      {/* Intelligence Engine Selector */}
+      <LLMSelector isCollapsed={!isOpen} />
 
       {/* Utilities */}
       <div className="px-3 py-6 border-t border-surface-100 dark:border-surface-700 space-y-1.5">

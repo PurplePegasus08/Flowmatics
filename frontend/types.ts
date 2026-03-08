@@ -25,7 +25,7 @@ export interface ColumnStats {
   totalRows: number;
 }
 
-export type ChartType = 'bar' | 'line' | 'scatter' | 'pie' | 'area' | 'heatmap' | 'doughnut' | 'bubble' | 'box' | 'venn' | 'contour' | 'table';
+export type ChartType = 'bar' | 'line' | 'scatter' | 'pie' | 'area' | 'heatmap' | 'doughnut' | 'bubble' | 'box' | 'venn' | 'contour' | 'table' | 'radar' | 'treemap' | 'heatmap_matrix' | 'step_line' | 'funnel';
 export type ThemeType = 'default' | 'neon' | 'pastel' | 'dark' | 'professional';
 export type AggregationType = 'sum' | 'avg' | 'min' | 'max' | 'count';
 export type SortOrder = 'none' | 'asc' | 'desc';
@@ -43,8 +43,8 @@ export interface ChartConfig {
   title: string;
   type: ChartType;
   xAxisKey: string;
-  yAxisKeys: string[]; 
-  zAxisKey?: string; 
+  yAxisKeys: string[];
+  zAxisKey?: string;
   xAxisTitle?: string;
   yAxisTitle?: string;
   aggregation?: AggregationType;

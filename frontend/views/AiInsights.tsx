@@ -4,18 +4,78 @@ import {
     ChevronDown, ChevronUp, BrainCircuit, PanelRightClose, PanelRightOpen,
     BarChart3, Maximize2, X, ChevronLeft, ChevronRight, PieChart as PieIcon,
     LineChart as LineIcon, Activity, LayoutGrid, Palette, Save, MousePointer2,
-    ScatterChart as ScatterIcon, Table as TableIcon, Eraser
+    ScatterChart as ScatterIcon, Table as TableIcon, Eraser, Copy, Check
 } from 'lucide-react';
 import { DataRow, ChatMessage, ChartConfig, ThemeType } from '../types';
-import { getGeminiResponse } from '../services/geminiService';
+import { apiClient } from '../services/apiClient';
 import { getApiUrl } from '../config';
 import {
     BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area,
-    ScatterChart, Scatter, ZAxis
+    ScatterChart, Scatter, ZAxis, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Treemap
 } from 'recharts';
 import { processChartData } from '../utils/chartUtils';
 import { CHART_THEMES } from './Visualization';
+import { useData } from '../contexts/DataContext';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+const MarkdownAlert = ({ children }: { children: React.ReactNode }) => {
+    // Basic logic to detect [!TIP], [!IMPORTANT], etc.
+    const childrenArray = React.Children.toArray(children);
+    const text = childrenArray.map(c => {
+        if (typeof c === 'string') return c;
+        if (React.isValidElement(c) && (c.props as any).children) {
+            return React.Children.toArray((c.props as any).children).filter(child => typeof child === 'string').join(' ');
+        }
+        return '';
+    }).join(' ');
+
+    let icon = <BrainCircuit className="w-5 h-5" />;
+    let title = 'Insight';
+    let border = 'border-indigo-500';
+    let bg = 'bg-indigo-50/30 dark:bg-indigo-900/10';
+    let textCol = 'text-indigo-600 dark:text-indigo-400';
+
+    if (text.includes('[!TIP]')) {
+        icon = <Sparkles className="w-5 h-5" />;
+        title = 'AI Reasoning';
+        border = 'border-emerald-500';
+        bg = 'bg-emerald-50/30 dark:bg-emerald-900/10';
+        textCol = 'text-emerald-600 dark:text-emerald-400';
+    } else if (text.includes('[!IMPORTANT]')) {
+        icon = <Activity className="w-5 h-5" />;
+        title = 'Crucial Step';
+        border = 'border-amber-500';
+        bg = 'bg-amber-50/30 dark:bg-amber-900/10';
+        textCol = 'text-amber-600 dark:text-amber-400';
+    }
+
+    const cleanChildren = React.Children.map(children, child => {
+        if (typeof child === 'string') return child.replace(/\[!(TIP|IMPORTANT|NOTE|WARNING|CAUTION)\]/, '');
+        if (React.isValidElement(child) && (child.props as any).children) {
+            return React.cloneElement(child, {
+                children: React.Children.map((child.props as any).children, c =>
+                    typeof c === 'string' ? c.replace(/\[!(TIP|IMPORTANT|NOTE|WARNING|CAUTION)\]/, '') : c
+                )
+            } as any);
+        }
+        return child;
+    });
+
+    return (
+        <div className={`my-6 border-l-4 ${border} ${bg} p-6 rounded-r-3xl animate-fade-in`}>
+            <div className={`flex items-center gap-3 mb-2 ${textCol} font-black text-[10px] uppercase tracking-[0.2em]`}>
+                {icon} {title}
+            </div>
+            <div className="text-sm dark:text-slate-300">
+                {cleanChildren}
+            </div>
+        </div>
+    );
+};
 
 interface AiInsightsProps {
     data: DataRow[];
@@ -31,8 +91,15 @@ interface AiInsightsProps {
 const PythonCodeBlock = ({ script, explanation, sessionId }: { script: string, explanation: string, sessionId: string }) => {
     const [isExecuting, setIsExecuting] = useState(false);
     const [hasExecuted, setHasExecuted] = useState(false);
+    const [copied, setCopied] = useState(false);
     const [showOutput, setShowOutput] = useState(true);
     const [output, setOutput] = useState<string>("");
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(script);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
 
     const handleRun = async () => {
         setIsExecuting(true);
@@ -47,7 +114,8 @@ const PythonCodeBlock = ({ script, explanation, sessionId }: { script: string, e
                 setOutput(`Error: ${data.text}`);
             } else {
                 setHasExecuted(true);
-                setOutput(data.text + (data.sample ? `\nSample:\n${JSON.stringify(data.sample, null, 2)}` : ''));
+                // Backend now returns markdown formatted text with diffs
+                setOutput(data.text);
             }
         } catch (e) {
             setOutput(`Execution failed: ${e}`);
@@ -67,20 +135,35 @@ const PythonCodeBlock = ({ script, explanation, sessionId }: { script: string, e
                         <Code2 className="w-4 h-4" /> Python Logic Engine
                     </span>
                 </div>
-                <button
-                    onClick={handleRun}
-                    disabled={isExecuting || hasExecuted}
-                    className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${hasExecuted
-                        ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl shadow-indigo-600/20'
-                        }`}
-                >
-                    {isExecuting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : hasExecuted ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-                    {isExecuting ? 'Processing' : hasExecuted ? 'Validated' : 'Run Script'}
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleCopy}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-600/30"
+                    >
+                        {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copied ? 'Copied' : 'Copy'}
+                    </button>
+                    <button
+                        onClick={handleRun}
+                        disabled={isExecuting || hasExecuted}
+                        className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${hasExecuted
+                            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                            : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl shadow-indigo-600/20'
+                            }`}
+                    >
+                        {isExecuting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : hasExecuted ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                        {isExecuting ? 'Processing' : hasExecuted ? 'Validated' : 'Run Script'}
+                    </button>
+                </div>
             </div>
-            <div className="p-6 font-mono text-xs text-slate-300 overflow-x-auto custom-scrollbar leading-relaxed bg-black/40">
-                <pre>{script}</pre>
+            <div className="text-[11px] leading-relaxed custom-scrollbar">
+                <SyntaxHighlighter
+                    language="python"
+                    style={atomDark}
+                    customStyle={{ background: 'transparent', padding: '1.5rem', margin: 0 }}
+                >
+                    {script}
+                </SyntaxHighlighter>
             </div>
             <div className="bg-slate-800/50 p-4 border-t border-slate-700">
                 <div className="flex items-center justify-between mb-2">
@@ -88,8 +171,14 @@ const PythonCodeBlock = ({ script, explanation, sessionId }: { script: string, e
                     <button onClick={() => setShowOutput(!showOutput)} className="text-slate-500 hover:text-white transition-colors">{showOutput ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</button>
                 </div>
                 {showOutput && (
-                    <div className="bg-black/40 rounded-xl p-4 font-mono text-[11px] leading-relaxed text-slate-100 border border-slate-700 animate-fade-in">
-                        {isExecuting ? <div className="text-indigo-400 animate-pulse">Initializing Neural Core...</div> : hasExecuted ? <div className="border-l-4 border-indigo-500 pl-4 py-1 whitespace-pre-wrap">{output || explanation}</div> : <div className="text-slate-500 italic">Engine Standby.</div>}
+                    <div className="bg-black/40 rounded-xl p-4 text-[13px] leading-relaxed text-slate-100 border border-slate-700 animate-fade-in chat-markdown">
+                        {isExecuting ? (
+                            <div className="text-indigo-400 animate-pulse font-mono">Initializing Neural Core...</div>
+                        ) : hasExecuted ? (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{output}</ReactMarkdown>
+                        ) : (
+                            <div className="text-slate-500 italic font-mono uppercase tracking-tighter text-[10px]">Engine Standby. awaiting validation.</div>
+                        )}
                     </div>
                 )}
             </div>
@@ -190,18 +279,25 @@ const LiveChart = ({ config, data }: { config: ChartConfig, data: DataRow[] }) =
                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '11px' }} />
                 </PieChart>
             );
-            case 'scatter':
-            case 'bubble': return (
-                <ScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
-                    <XAxis type="number" dataKey="x" name={config.xAxisKey} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
-                    <YAxis type="number" dataKey="y" name={hasY ? config.yAxisKeys[0] : 'Value'} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
-                    {config.type === 'bubble' && <ZAxis type="number" dataKey="z" range={[50, 400]} />}
-                    <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '11px' }} />
-                    <Scatter name={config.title} data={chartData} fill={colors[0]} animationDuration={500} />
-                </ScatterChart>
+            case 'radar': return (
+                <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
+                    <PolarGrid strokeOpacity={0.1} />
+                    <PolarAngleAxis dataKey="name" tick={{ fontSize: 9 }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 'auto']} tick={{ fontSize: 9 }} />
+                    {hasY ? config.yAxisKeys.map((key, i) => (
+                        <Radar key={key} name={key} dataKey={key} stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.4} />
+                    )) : (
+                        <Radar name="Value" dataKey="value" stroke={colors[0]} fill={colors[0]} fillOpacity={0.4} />
+                    )}
+                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '11px' }} />
+                </RadarChart>
             );
-            default: return <div className="flex items-center justify-center h-full text-slate-400 text-xs">Chart type optimized for Studio view</div>;
+            case 'treemap': return (
+                <Treemap data={chartData} dataKey="value" stroke="#fff" fill={colors[0]}>
+                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', fontSize: '11px' }} />
+                </Treemap>
+            );
+            default: return <div className="flex items-center justify-center h-full text-slate-400 text-xs italic">Visualization engine synthesizing...</div>;
         }
     };
 
@@ -215,6 +311,7 @@ const LiveChart = ({ config, data }: { config: ChartConfig, data: DataRow[] }) =
 export const AiInsights: React.FC<AiInsightsProps> = ({
     data, headers, messages, setMessages, onUpdateVisualization, onCleanData, onAddToDashboard, sessionId
 }) => {
+    const { activeProvider } = useData();
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -223,6 +320,22 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
     const [showLivePanel, setShowLivePanel] = useState(false);
     const [chartHistory, setChartHistory] = useState<ChartConfig[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [proactiveInsights, setProactiveInsights] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (data && data.length > 0) {
+            fetchProactiveInsights();
+        }
+    }, [data, sessionId]);
+
+    const fetchProactiveInsights = async () => {
+        try {
+            const res = await apiClient.getProactiveInsights(sessionId);
+            if (res.insights) setProactiveInsights(res.insights);
+        } catch (e) {
+            console.error("Failed to fetch proactive insights:", e);
+        }
+    };
 
     const currentChartConfig = chartHistory[currentIndex];
 
@@ -247,51 +360,71 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
         setInput('');
         setLoading(true);
 
+        const modelMsgId = (Date.now() + 1).toString();
+        // Add placeholder message
+        setMessages(prev => [...prev, { id: modelMsgId, role: 'model', content: '' }]);
+
         try {
-            const contextStr = `Total records: ${data.length}. Sample data: ${JSON.stringify(data.slice(0, 3))}. Available columns: ${headers.join(', ')}.`;
-            const history = messages.map(m => ({ role: m.role === 'user' ? 'user' : 'model' as any, parts: [{ text: m.content }] }));
-            history.push({ role: 'user', parts: [{ text: input }] });
+            const finalRes = await apiClient.chatStream(
+                sessionId,
+                input,
+                activeProvider,
+                (chunk) => {
+                    setMessages(prev => prev.map(m =>
+                        m.id === modelMsgId ? { ...m, content: (m.content || '') + chunk } : m
+                    ));
+                }
+            );
 
-            const response = await getGeminiResponse(history, contextStr, undefined, sessionId);
-            const content = response.text;
-            const toolCalls = response.functionCalls;
+            if (finalRes) {
+                const args = finalRes as any;
+                const reasoning = args.reasoning || "";
 
-            if (content) setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', content }]);
-            if (toolCalls) {
-                for (const call of toolCalls) {
-                    const args = call.args as any;
-                    if (call.name === 'runPythonAnalysis') {
-                        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', content: `PYTHON_CODE_BLOCK:${JSON.stringify({ script: args.script, explanation: args.explanation })}`, isToolOutput: true }]);
-                    } else if (call.name === 'generateVisualization') {
-                        const newConfig: ChartConfig = {
-                            id: Date.now().toString(),
-                            title: args.title,
-                            type: args.type as any, // allow 'table'
-                            xAxisKey: args.xAxisKey,
-                            yAxisKeys: args.yAxisKey ? [args.yAxisKey] : [],
-                            theme: 'default',
-                            aggregation: 'sum'
-                        };
+                // If the stream already contains the reasoning, we don't want to double it.
+                // But the prompt instructs to provide reasoning twice (once in plain text, once in JSON).
+                // We'll trust ReactMarkdown to handle it.
 
-                        // Update History
-                        setChartHistory(prev => {
-                            const next = [...prev, newConfig];
-                            // Schedule index update after render
-                            setTimeout(() => setCurrentIndex(next.length - 1), 0);
-                            return next;
-                        });
-                        setShowLivePanel(true);
+                if (args.action === 'runPythonAnalysis' || args.action === 'code') {
+                    const script = args.content || args.script;
+                    const explanation = args.explanation || "";
+                    setMessages(prev => [...prev.filter(m => m.id !== modelMsgId), {
+                        id: Date.now().toString(),
+                        role: 'model',
+                        content: `PYTHON_CODE_BLOCK:${JSON.stringify({ script, explanation })}`,
+                        isToolOutput: true
+                    }]);
+                } else if (args.action === 'generateVisualization' || args.action === 'visualize') {
+                    const newConfig: ChartConfig = {
+                        id: Date.now().toString(),
+                        title: args.title,
+                        type: args.type as any,
+                        xAxisKey: args.xAxisKey,
+                        yAxisKeys: args.yAxisKey ? [args.yAxisKey] : [],
+                        theme: 'default',
+                        aggregation: 'avg'
+                    };
 
-                        const responseMsg = args.type === 'table'
-                            ? `I've displayed the raw data for "${args.xAxisKey}" in the Live Board.`
-                            : `I've rendered the "${args.title}" chart in the Live Board for you.`;
+                    setChartHistory(prev => {
+                        const next = [...prev, newConfig];
+                        setTimeout(() => setCurrentIndex(next.length - 1), 0);
+                        return next;
+                    });
+                    setShowLivePanel(true);
 
-                        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', content: responseMsg, isToolOutput: true }]);
-                    }
+                    const responseMsg = args.type === 'table'
+                        ? `I've displayed the raw data for "${args.xAxisKey}" in the Live Board.`
+                        : `I've rendered the "${args.title}" chart in the Live Board for you.`;
+
+                    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', content: responseMsg, isToolOutput: true }]);
+                } else if (args.action === 'auto_clean') {
+                    // Update content with reasoning_md + success message
+                    setMessages(prev => prev.map(m =>
+                        m.id === modelMsgId ? { ...m, content: (args.explanation || "✅ Smart Auto-Clean complete!") } : m
+                    ));
                 }
             }
         } catch (e) {
-            console.error("Chat Error:", e);
+            console.error("Streaming Error:", e);
             setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', content: `Neural communication interrupted. Details: ${e instanceof Error ? e.message : String(e)}` }]);
         } finally {
             setLoading(false);
@@ -345,6 +478,38 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                             <p className="text-[10px] font-medium tracking-widest text-slate-500">Awaiting Data Interrogation...</p>
                         </div>
                     )}
+
+                    {/* Proactive Insights "Pulse" Section */}
+                    {proactiveInsights.length > 0 && !loading && messages.length <= 1 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-slide-up">
+                            <div className="col-span-full border-b border-slate-200 dark:border-slate-800 pb-2 mb-2">
+                                <h4 className="flex items-center gap-2 text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-[0.2em]">
+                                    <Activity className="w-3.5 h-3.5" /> Intelligence Pulse: Automatic Discoveries
+                                </h4>
+                            </div>
+                            {proactiveInsights.map((insight, i) => (
+                                <div key={i} className={`p-5 rounded-2xl border ${insight.type === 'anomaly' ? 'bg-amber-50/50 dark:bg-amber-500/5 border-amber-200 dark:border-amber-500/20' : 'bg-indigo-50/50 dark:bg-indigo-500/5 border-indigo-200 dark:border-indigo-500/20'} shadow-sm`}>
+                                    <div className="flex items-start justify-between mb-3">
+                                        <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${insight.type === 'anomaly' ? 'bg-amber-500 text-white' : 'bg-indigo-600 text-white'}`}>
+                                            {insight.type}
+                                        </span>
+                                        {insight.strength === 'strong' && (
+                                            <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase">
+                                                <Sparkles className="w-3 h-3" /> High Confidence
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100 leading-snug">{insight.description}</p>
+                                    <button
+                                        onClick={() => setInput(`Tell me more about the ${insight.type === 'anomaly' ? `anomalies in ${insight.column}` : `correlation between ${insight.columns[0]} and ${insight.columns[1]}`}`)}
+                                        className="mt-4 text-[10px] font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1 transition-colors uppercase tracking-widest"
+                                    >
+                                        Investigate with AI <ChevronRight className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     {messages.map((msg) => {
                         const isPython = msg.content.startsWith('PYTHON_CODE_BLOCK:');
                         let pythonData = null;
@@ -359,9 +524,38 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                                     ? 'bg-indigo-600 text-white rounded-tr-none font-medium'
                                     : isPython
                                         ? 'bg-transparent p-0 border-none max-w-full w-full'
-                                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-tl-none border border-slate-100 dark:border-slate-800'
+                                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-tl-none border border-slate-100 dark:border-slate-800 chat-markdown'
                                     }`}>
-                                    {isPython && pythonData ? <PythonCodeBlock script={pythonData.script} explanation={pythonData.explanation} sessionId={sessionId} /> : msg.content}
+                                    {isPython && pythonData ? (
+                                        <PythonCodeBlock script={pythonData.script} explanation={pythonData.explanation} sessionId={sessionId} />
+                                    ) : (
+                                        <ReactMarkdown
+                                            remarkPlugins={[remarkGfm]}
+                                            components={{
+                                                blockquote: ({ children }) => <MarkdownAlert>{children}</MarkdownAlert>,
+                                                code({ node, inline, className, children, ...props }: any) {
+                                                    const match = /language-(\w+)/.exec(className || '')
+                                                    return !inline && match ? (
+                                                        <SyntaxHighlighter
+                                                            style={atomDark}
+                                                            language={match[1]}
+                                                            PreTag="div"
+                                                            customStyle={{ borderRadius: '1rem', margin: '1rem 0' }}
+                                                            {...props}
+                                                        >
+                                                            {String(children).replace(/\n$/, '')}
+                                                        </SyntaxHighlighter>
+                                                    ) : (
+                                                        <code className={className} {...props}>
+                                                            {children}
+                                                        </code>
+                                                    )
+                                                }
+                                            }}
+                                        >
+                                            {msg.content}
+                                        </ReactMarkdown>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -450,9 +644,17 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                             <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 flex-1 flex flex-col min-h-0">
                                 <div className="flex justify-between items-start mb-6 shrink-0">
                                     <h4 className="font-bold text-lg text-slate-900 dark:text-white truncate pr-4">{currentChartConfig.title}</h4>
-                                    <span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 text-[10px] font-bold uppercase tracking-widest rounded-full whitespace-nowrap">
-                                        {currentChartConfig.type}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => onAddToDashboard(currentChartConfig)}
+                                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider rounded-lg shadow-lg shadow-indigo-600/10 flex items-center gap-2 transition-all active:scale-95"
+                                        >
+                                            <Save className="w-3 h-3" /> Pin
+                                        </button>
+                                        <span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 text-[10px] font-bold uppercase tracking-widest rounded-full whitespace-nowrap">
+                                            {currentChartConfig.type}
+                                        </span>
+                                    </div>
                                 </div>
                                 <div className="flex-1 min-h-0 w-full overflow-hidden">
                                     <LiveChart config={currentChartConfig} data={data} />
@@ -461,19 +663,15 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
 
                             {/* Interactive Controls (Hidden for Table) */}
                             {currentChartConfig.type !== 'table' && (
-                                <div className="mt-4 grid grid-cols-6 gap-2 bg-white dark:bg-slate-800 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    {['bar', 'line', 'area', 'pie', 'scatter', 'bubble'].map(type => (
+                                <div className="mt-4 grid grid-cols-4 gap-2 bg-white dark:bg-slate-800 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    {['bar', 'line', 'area', 'pie', 'scatter', 'bubble', 'radar', 'treemap'].map(type => (
                                         <button
                                             key={type}
                                             onClick={() => handleUpdateCurrent({ type: type as any })}
                                             className={`flex items-center justify-center p-2 rounded-xl transition-all ${currentChartConfig.type === type ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
                                             title={type}
                                         >
-                                            {type === 'bar' && <BarChart3 className="w-4 h-4" />}
-                                            {type === 'line' && <LineIcon className="w-4 h-4" />}
-                                            {type === 'area' && <Activity className="w-4 h-4" />}
-                                            {type === 'pie' && <PieIcon className="w-4 h-4" />}
-                                            {(type === 'scatter' || type === 'bubble') && <ScatterIcon className="w-4 h-4" />}
+                                            <span className="text-[10px] font-bold capitalize">{type}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -487,12 +685,6 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                                     title="Cycle Theme"
                                 >
                                     <Palette className="w-5 h-5" />
-                                </button>
-                                <button
-                                    onClick={() => onAddToDashboard(currentChartConfig)}
-                                    className="flex-1 py-4 bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-900 rounded-2xl text-xs font-bold uppercase tracking-widest shadow-lg transition-all flex items-center justify-center gap-2"
-                                >
-                                    <Save className="w-4 h-4" /> Pin
                                 </button>
                                 <button
                                     onClick={() => onUpdateVisualization(currentChartConfig)}
@@ -511,6 +703,6 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                     )}
                 </div>
             </div>
-        </div>
+        </div >
     );
 };

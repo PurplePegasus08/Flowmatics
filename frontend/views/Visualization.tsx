@@ -1,13 +1,12 @@
-
 import React, { useMemo, useState } from 'react';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, AreaChart, Area, Label, ScatterChart, Scatter, ZAxis, Tooltip, LabelList
+  PieChart, Pie, Cell, AreaChart, Area, Label, ScatterChart, Scatter, ZAxis, Tooltip, LabelList, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Treemap, ComposedChart, Rectangle
 } from 'recharts';
 import {
   Download, Plus, ChevronDown, Check, Activity, Palette, Zap, Sparkles,
   LayoutGrid, Settings2, RotateCcw, Type as TypeIcon, ChevronLeft, ChevronRight,
-  Maximize2, Sliders, Box, Layers, MousePointer2, X, Filter, ListFilter, Trash2
+  Maximize2, Sliders, Box, Layers, MousePointer2, X, Filter, ListFilter, Trash2, Wand2, Gauge, Hash, BarChart3, LineChart as LineIcon, PieChart as PieIcon, ScatterChart as ScatterIcon, Activity as AreaIcon, BrainCircuit, Layout, Shield
 } from 'lucide-react';
 import { ChartConfig, DataRow, ThemeType, AggregationType, SortOrder } from '../types';
 import { processChartData } from '../utils/chartUtils';
@@ -157,13 +156,19 @@ export const Visualization: React.FC<VisualizationProps> = ({
       case 'bar': return (
         <ResponsiveContainer width="100%" height="100%">
           <BarChart {...common}>
+            <defs>
+              <linearGradient id="barGradientViz" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={themeColors[0]} stopOpacity={1} />
+                <stop offset="100%" stopColor={themeColors[0]} stopOpacity={0.6} />
+              </linearGradient>
+            </defs>
             {chartUI}
             {hasY ? config.yAxisKeys.map((key, i) => (
-              <Bar key={key} dataKey={key} fill={themeColors[i % themeColors.length]} radius={[8, 8, 0, 0]} barSize={40}>
+              <Bar key={key} dataKey={key} fill={`url(#barGradientViz)`} radius={[8, 8, 0, 0]} barSize={40}>
                 {config.showLabels && <LabelList dataKey={key} {...dataLabelProps} />}
               </Bar>
             )) : (
-              <Bar dataKey="value" name="Count" fill={themeColors[0]} radius={[8, 8, 0, 0]} barSize={40}>
+              <Bar dataKey="value" name="Count" fill={`url(#barGradientViz)`} radius={[8, 8, 0, 0]} barSize={40}>
                 {config.showLabels && <LabelList dataKey="value" {...dataLabelProps} />}
               </Bar>
             )}
@@ -189,21 +194,19 @@ export const Visualization: React.FC<VisualizationProps> = ({
       case 'area': return (
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart {...common}>
-            {chartUI}
             <defs>
-              {themeColors.map((color, i) => (
-                <linearGradient key={i} id={`colorGradient${i}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={color} stopOpacity={0.4} />
-                  <stop offset="95%" stopColor={color} stopOpacity={0} />
-                </linearGradient>
-              ))}
+              <linearGradient id="areaGradientViz" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={themeColors[0]} stopOpacity={0.4} />
+                <stop offset="100%" stopColor={themeColors[0]} stopOpacity={0} />
+              </linearGradient>
             </defs>
+            {chartUI}
             {hasY ? config.yAxisKeys.map((key, i) => (
-              <Area key={key} type="monotone" dataKey={key} stroke={themeColors[i % themeColors.length]} fill={`url(#colorGradient${i})`} strokeWidth={3} strokeLinecap="round">
+              <Area key={key} type="monotone" dataKey={key} stroke={themeColors[i % themeColors.length]} fill={`url(#areaGradientViz)`} strokeWidth={3} strokeLinecap="round">
                 {config.showLabels && <LabelList dataKey={key} {...dataLabelProps} />}
               </Area>
             )) : (
-              <Area type="monotone" dataKey="value" name="Count" stroke={themeColors[0]} fill={`url(#colorGradient0)`} strokeWidth={3} strokeLinecap="round">
+              <Area type="monotone" dataKey="value" name="Count" stroke={themeColors[0]} fill={`url(#areaGradientViz)`} strokeWidth={3} strokeLinecap="round">
                 {config.showLabels && <LabelList dataKey="value" {...dataLabelProps} />}
               </Area>
             )}
@@ -378,13 +381,25 @@ export const Visualization: React.FC<VisualizationProps> = ({
               {showModelMenu && (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setShowModelMenu(false)}></div>
-                  <div className="absolute top-full left-0 right-0 mt-3 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-2xl shadow-material-hover z-40 p-2 animate-slide-up">
-                    {['bar', 'line', 'pie', 'doughnut', 'area', 'scatter', 'bubble'].map(t => (
+                  <div className="absolute top-full left-0 right-0 mt-3 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-2xl shadow-material-hover z-40 p-3 grid grid-cols-4 gap-2 animate-slide-up">
+                    {[
+                      { id: 'bar', icon: <BarChart3 className="w-4 h-4" /> },
+                      { id: 'line', icon: <LineIcon className="w-4 h-4" /> },
+                      { id: 'area', icon: <AreaIcon className="w-4 h-4" /> },
+                      { id: 'pie', icon: <PieIcon className="w-4 h-4" /> },
+                      { id: 'scatter', icon: <ScatterIcon className="w-4 h-4" /> },
+                      { id: 'step_line', icon: <Activity className="w-4 h-4" /> },
+                      { id: 'heatmap_matrix', icon: <Layout className="w-4 h-4" /> },
+                      { id: 'radar', icon: <Shield className="w-4 h-4" /> },
+                      { id: 'treemap', icon: <LayoutGrid className="w-4 h-4" /> },
+                    ].map(t => (
                       <button
-                        key={t} onClick={() => { setConfig({ ...config, type: t as any }); setShowModelMenu(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 text-xs font-bold rounded-xl transition-all capitalize ${config.type === t ? 'bg-indigo-600 text-white' : 'text-surface-500 hover:bg-surface-50 dark:hover:bg-surface-700'}`}
+                        key={t.id} onClick={() => { setConfig({ ...config, type: t.id as any }); setShowModelMenu(false); }}
+                        className={`flex flex-col items-center justify-center gap-2 p-3 text-[9px] font-black uppercase tracking-tighter rounded-xl transition-all ${config.type === t.id ? 'bg-indigo-600 text-white' : 'text-surface-500 hover:bg-surface-50 dark:hover:bg-surface-700'}`}
+                        title={t.id}
                       >
-                        <Layers className="w-4 h-4 opacity-40" /> {t}
+                        {t.icon}
+                        <span className="truncate w-full">{t.id}</span>
                       </button>
                     ))}
                   </div>
@@ -512,15 +527,6 @@ export const Visualization: React.FC<VisualizationProps> = ({
             </div>
           </div>
 
-          <div className="mt-auto pt-8">
-            <button
-              onClick={() => onAddToDashboard(config)}
-              disabled={!config.xAxisKey}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-[0.25em] flex items-center justify-center gap-4 transition-all active:scale-95 disabled:opacity-20 shadow-xl shadow-indigo-600/20"
-            >
-              <Plus className="w-5 h-5" /> Pin to Desk
-            </button>
-          </div>
         </div>
       </div>
 
@@ -542,6 +548,13 @@ export const Visualization: React.FC<VisualizationProps> = ({
               </div>
             </div>
             <div className="flex gap-3">
+              <button
+                onClick={() => onAddToDashboard(config)}
+                disabled={!config.xAxisKey}
+                className="flex items-center gap-3 px-6 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[2rem] text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-20"
+              >
+                <Plus className="w-4 h-4" /> Pin to Desk
+              </button>
               <button className="p-5 text-surface-400 hover:text-indigo-600 bg-surface-50 dark:bg-surface-800 rounded-3xl border border-surface-100 dark:border-surface-700 transition-all hover:shadow-soft active:scale-90">
                 <Download className="w-7 h-7" />
               </button>

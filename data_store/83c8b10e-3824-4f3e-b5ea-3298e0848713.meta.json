@@ -1,0 +1,12 @@
+{
+  "key": "83c8b10e-3824-4f3e-b5ea-3298e0848713",
+  "created_at": "2026-02-23T00:53:55.276474",
+  "rows": 2,
+  "columns": 3,
+  "size_bytes": 2570,
+  "column_names": [
+    "name",
+    "age",
+    "city"
+  ]
+}
