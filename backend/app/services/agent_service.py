@@ -119,9 +119,6 @@ class AgentService(BaseAgentService):
             state.retry_count += 1
             state.next_node = "execute" if state.retry_count < state.MAX_RETRIES else "human_input"
     async def stream_execute(self, state: AgentState):
-        """
-        Stream LLM response and yield chunks.
-        """
         if self.llm is None:
             yield {"type": "error", "text": "LLM not initialized."}
             return
@@ -130,23 +127,13 @@ class AgentService(BaseAgentService):
         full_text = ""
         
         try:
-            # Using LangChain's sync streaming for now, or we can use astream if supported
-            # ChatGoogleGenerativeAI supports stream()
-            for chunk in self.llm.stream([HumanMessage(content=prompt)]):
+            async for chunk in self.llm.astream([HumanMessage(content=prompt)]):
                 content = chunk.content
                 full_text += content
                 yield {"type": "chunk", "text": content}
             
-            # After stream completes, parse final JSON for tools
             m = re.search(r'```json\s*(\{.*?\})\s*```', full_text, re.S) or re.search(r'(\{.*?\})', full_text, re.S)
             res = json.loads(m.group(1)) if m else {"action": "answer", "content": full_text}
-            
-            # Execute tools (similar to execute() but without re-running LLM)
-            action = res.get("action")
-            content = res.get("content", "")
-            reasoning = res.get("reasoning", "")
-            
-            # Yield final state/result marker
             yield {"type": "final", "res": res}
             
         except Exception as e:

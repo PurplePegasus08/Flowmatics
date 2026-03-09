@@ -10,20 +10,23 @@ from app.core.config import settings
 from app.core.logger import get_logger
 from app.core.storage import DiskStore
 from app.models.agent_state import AgentState, UndoEntry
+from app.core.cache import llm_cache
 
 logger = get_logger()
 store = DiskStore(base_path=settings.data_store_path)
 
 PERSONAS = {
-    "Scientist": """You are an expert Data Scientist AI with a PhD in Statistics. 
-Follow strict statistical rigor. Focus on data distribution, outliers, correlations, and machine learning potential.
-Be precise, technical, and objective. Always explain the 'why' behind your statistical choices.""",
-    "Analyst": """You are a world-class Business Intelligence & Finance Analyst AI. 
-Focus on high-level trends, ROI, operational efficiency, and actionable business insights. 
-Be concise, practical, and focus on the 'So What?' of the data. Translate technical metrics into business value.""",
-    "Designer": """You are a creative Data Visualization Designer AI. 
-Focus on visual storytelling, beautiful charts, and user experience. 
-Suggest the most aesthetically pleasing and intuitive ways to represent data patterns. Focus on clarity and 'wow' factor."""
+    "Scientist": """You are an expert Data Scientist AI. 
+Focus on practical, clean, and executable analysis. Use standard libraries (pandas, numpy, etc.) effectively.
+Avoid over-engineering. Your code should be the most direct path to the user's answer. 
+Briefly explain insights, but keep the implementation lightweight.""",
+    "Analyst": """You are a high-level Business Analyst AI. 
+Focus on trends, ROI, and actionable business logic. 
+Be extremely concise. If the user asks for a simple calculation, provide ONLY that calculation.
+Focus on the 'So What?' rather than the 'How'.""",
+    "Designer": """You are a Data Visualization Designer AI. 
+Focus on beautiful, intuitive charts and UX. 
+Suggest the most aesthetic way to show data. Keep reasoning short and focus on the visual output."""
 }
 
 class BaseAgentService(ABC):
@@ -31,6 +34,12 @@ class BaseAgentService(ABC):
     
     def _get_stats(self, work_id: str) -> str:
         if not work_id: return "No data."
+        
+        # Cache stats per work_id
+        cache_key = f"stats_{work_id}"
+        cached = llm_cache.get(cache_key)
+        if cached: return cached
+
         try:
             df = store.get_df(work_id)
             buf = io.StringIO()
@@ -41,29 +50,18 @@ class BaseAgentService(ABC):
             
             numeric_desc = df[numeric_cols].describe().to_string() if not numeric_cols.empty else "No numeric columns."
             
-            # Categorical breakdown
             cat_summary = ""
-            for col in cat_cols[:10]: # Limit to first 10 cat columns for prompt size
+            for col in cat_cols[:10]:
                 vc = df[col].value_counts().head(5).to_dict()
                 cat_summary += f"- {col}: {vc}\n"
             
             missing = df.isna().sum()
             missing_str = str(missing[missing > 0]) if missing.sum() > 0 else 'None'
             
-            return f"""
-Shape: {df.shape}
-Missing Values:
-{missing_str}
-
-Numeric Summary:
-{numeric_desc}
-
-Categorical Top Values:
-{cat_summary if cat_summary else "None"}
-
-Info:
-{buf.getvalue()}
-"""
+            stats_text = f"Shape: {df.shape}\nMissing Values:\n{missing_str}\n\nNumeric Summary:\n{numeric_desc}\n\nCategorical Top Values:\n{cat_summary}\n\nInfo:\n{buf.getvalue()}"
+            
+            llm_cache.set(cache_key, stats_text, ttl=3600)
+            return stats_text
         except Exception as e:
             logger.error(f"Stats error for {work_id}: {e}")
             return f"Stats error: {e}"
@@ -78,57 +76,47 @@ Info:
             return [], []
 
     def build_prompt(self, state: AgentState) -> str:
-        err = f"\nError: {state.error}\nPlease fix the error and try again." if state.error else ""
-        retry = f"\nRetry {state.retry_count + 1}/{state.MAX_RETRIES}" if state.retry_count else ""
-        
-        history_txt = ""
-        if state.chat_history:
-            history_txt = "\n**Conversation History:**\n"
-            for msg in state.chat_history[-6:]:
-                role = "User" if msg.get("role") == "user" else "Assistant"
-                text = msg.get("parts", [{"text": ""}])[0].get("text", "")
-                history_txt += f"{role}: {text}\n"
-        
-        cols, sample = self._get_schema_sample(state.work_id, n=5)
+        cols, sample = self._get_schema_sample(state.work_id, n=3)
         stats = self._get_stats(state.work_id)
-        persona_prompt = PERSONAS.get(state.persona, PERSONAS["Scientist"])
+        persona = PERSONAS.get(state.persona, PERSONAS["Scientist"])
         
-        return f"""{persona_prompt}
+        history = ""
+        if state.chat_history:
+            for msg in state.chat_history[-4:]:
+                role = "User" if msg.get("role") == "user" else "AI"
+                parts = msg.get("parts", [])
+                text = parts[0].get("text", "") if parts else msg.get("content", "")
+                history += f"{role}: {text}\n"
 
-**Your Mission:** Solve the user's request using the available tools. Be smart, proactive, and precise.
+        return f"""{persona}
 
-**Current Dataset Summary:**
+DATASET CONTEXT:
 {stats}
+SCHEMA SAMPLE: {json.dumps(sample, default=str)}
 
-**Available Columns:** {', '.join(cols)}
+INSTRUCTIONS:
+You are a professional data engine. Solve the request below.
+- Keep output CONCISE. Do not include boilerplate or extra analysis unless asked.
+- CODE STYLE: Use "Minimum Viable Code". Avoid custom helper functions unless absolutely necessary.
+- If you need to transform data, use "action": "code".
+- If you need to visualize, use "action": "visualize".
+- FOR OUTPUT: You MUST return a JSON block at the VERY END.
+- DO NOT repeat the reasoning twice.
 
-**Sample Data (first 5 rows):**
-{json.dumps(sample, default=str, indent=2)}
-
-{history_txt}
-**User Request:** "{state.user_message}"
-{err}{retry}
-
-**Instructions:**
-1. FIRST, provide a brief (1-2 sentences) natural language explanation of your plan.
-2. SECOND, provide your final action in a clean JSON block.
-3. Your FINAL response must end with the JSON block.
-
-**Response Format REQUIRED (within a markdown code block):**
-```json
+USER REQUEST: {state.user_message}
+{history}
+RESPONSE FORMAT (JSON):
 {{
-    "reasoning": "Detailed technical rationale.",
-    "action": "action_name",
-    "content": "action_content or answer_text",
-    "explanation": "Brief user-facing summary",
-    "title": "Visualization Title",
-    "type": "Chart Type",
-    "xAxisKey": "X Axis",
-    "yAxisKey": "Y Axis"
+    "reasoning": "Direct technical rationale.",
+    "action": "answer|code|visualize|auto_clean",
+    "content": "Result content or python script",
+    "explanation": "Brief human summary",
+    "title": "Viz Title",
+    "type": "bar|line|scatter|pie|area|table",
+    "xAxisKey": "col_name",
+    "yAxisKey": "col_name"
 }}
-```
-
-**Now provide your response:**"""
+"""
 
     def push_undo(self, state: AgentState, desc: str):
         if state.work_id:

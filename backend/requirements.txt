@@ -16,5 +16,4 @@ timeout-decorator
 pytest
 scikit-learn
 tabulate
-scikit-learn
-openpyxl
+langchain-ollama

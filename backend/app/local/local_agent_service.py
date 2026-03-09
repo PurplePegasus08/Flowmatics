@@ -1,5 +1,9 @@
 import json
 import re
+from typing import AsyncGenerator, Dict, Any
+from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage
+
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.models.agent_state import AgentState
@@ -13,7 +17,17 @@ store = DiskStore(base_path=settings.data_store_path)
 
 class LocalAgentService(BaseAgentService):
     def __init__(self, ollama_url: str = None, model: str = None):
-        self.client = OllamaClient(base_url=ollama_url or settings.ollama_base_url, model=model or settings.ollama_model)
+        base_url = ollama_url or settings.ollama_base_url
+        model_name = model or settings.ollama_model
+        
+        self.client = OllamaClient(base_url=base_url, model=model_name)
+        self.llm = ChatOllama(
+            model=model_name,
+            base_url=base_url,
+            temperature=0.7,
+            format="json",
+            timeout=120
+        )
 
     def is_available(self) -> bool:
         return self.client.is_available()
@@ -26,15 +40,15 @@ class LocalAgentService(BaseAgentService):
 
         prompt = self.build_prompt(state)
         try:
-            raw_response = self.client.generate(prompt=prompt, temperature=0.7, format="json")
-            text = raw_response['text'].strip()
+            # LangChain handles the invoke and internal parsing if format="json" is respected by the model
+            raw_response = self.llm.invoke([HumanMessage(content=prompt)])
+            text = raw_response.content.strip()
             
-            # Robust JSON extraction matching cloud service
+            # Robust JSON extraction as a fallback
             m = re.search(r'```json\s*(\{.*?\})\s*```', text, re.S) or re.search(r'(\{.*?\})', text, re.S)
             if m:
                 res = json.loads(m.group(1))
             else:
-                # Fallback for models that might return bare text despite 'format: json'
                 res = {"action": "answer", "content": text}
                 
         except Exception as e:
@@ -49,7 +63,6 @@ class LocalAgentService(BaseAgentService):
             content = res.get("content", "")
             reasoning = res.get("reasoning", "")
             
-            # Incorporate reasoning into the user message
             reasoning_md = f"> [!TIP]\n> **AI Reasoning:** {reasoning}\n\n" if reasoning else ""
 
             if action in ("answer", "clarify"):
@@ -108,11 +121,7 @@ class LocalAgentService(BaseAgentService):
             state.next_node = "execute" if state.retry_count < state.MAX_RETRIES else "human_input"
         return state
 
-
     async def stream_execute(self, state: AgentState):
-        """
-        Stream Ollama response and yield chunks.
-        """
         if not self.is_available():
             yield {"type": "error", "text": "Ollama not available."}
             return
@@ -121,9 +130,11 @@ class LocalAgentService(BaseAgentService):
         full_text = ""
         
         try:
-            for chunk in self.client.stream_generate(prompt=prompt, temperature=0.7, format="json"):
-                full_text += chunk
-                yield {"type": "chunk", "text": chunk}
+            # Using ChatOllama's stream method
+            async for chunk in self.llm.astream([HumanMessage(content=prompt)]):
+                content = chunk.content
+                full_text += content
+                yield {"type": "chunk", "text": content}
             
             # After stream completes, parse final JSON for tools
             m = re.search(r'```json\s*(\{.*?\})\s*```', full_text, re.S) or re.search(r'(\{.*?\})', full_text, re.S)
@@ -138,5 +149,5 @@ class LocalAgentService(BaseAgentService):
             logger.error(f"Local streaming error: {e}")
             yield {"type": "error", "text": str(e)}
 
-
 local_agent_service = LocalAgentService()
+
