@@ -34,22 +34,22 @@ const MarkdownAlert = ({ children }: { children: React.ReactNode }) => {
     }).join(' ');
 
     let icon = <BrainCircuit className="w-5 h-5" />;
-    let title = 'Insight';
+    let title = 'Analytical Insight';
     let border = 'border-indigo-500';
-    let bg = 'bg-indigo-50/30 dark:bg-indigo-900/10';
+    let bg = 'bg-indigo-50/50 dark:bg-indigo-500/10';
     let textCol = 'text-indigo-600 dark:text-indigo-400';
 
-    if (text.includes('[!TIP]')) {
+    if (text.includes('[!TIP]') || text.toLowerCase().includes('reasoning')) {
         icon = <Sparkles className="w-5 h-5" />;
-        title = 'AI Reasoning';
+        title = 'AI Reasoner';
         border = 'border-emerald-500';
-        bg = 'bg-emerald-50/30 dark:bg-emerald-900/10';
+        bg = 'bg-emerald-50/50 dark:bg-emerald-500/10';
         textCol = 'text-emerald-600 dark:text-emerald-400';
     } else if (text.includes('[!IMPORTANT]')) {
         icon = <Activity className="w-5 h-5" />;
-        title = 'Crucial Step';
+        title = 'Strategic Note';
         border = 'border-amber-500';
-        bg = 'bg-amber-50/30 dark:bg-amber-900/10';
+        bg = 'bg-amber-50/50 dark:bg-amber-500/10';
         textCol = 'text-amber-600 dark:text-amber-400';
     }
 
@@ -66,11 +66,14 @@ const MarkdownAlert = ({ children }: { children: React.ReactNode }) => {
     });
 
     return (
-        <div className={`my-6 border-l-4 ${border} ${bg} p-6 rounded-r-3xl animate-fade-in`}>
-            <div className={`flex items-center gap-3 mb-2 ${textCol} font-black text-[10px] uppercase tracking-[0.2em]`}>
-                {icon} {title}
+        <div className={`my-8 border-l-4 ${border} ${bg} p-8 rounded-r-3xl animate-fade-in shadow-xl shadow-indigo-500/5 ring-1 ring-white/10`}>
+            <div className={`flex items-center gap-3 mb-4 ${textCol} font-black text-[10px] uppercase tracking-[0.3em]`}>
+                <div className="flex items-center justify-center p-2 rounded-lg bg-white/10 ring-1 ring-white/20">
+                    {icon}
+                </div>
+                {title}
             </div>
-            <div className="text-sm dark:text-slate-300">
+            <div className="text-[13px] leading-relaxed dark:text-slate-200">
                 {cleanChildren}
             </div>
         </div>
@@ -361,17 +364,26 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
         setLoading(true);
 
         const modelMsgId = (Date.now() + 1).toString();
-        // Add placeholder message
         setMessages(prev => [...prev, { id: modelMsgId, role: 'model', content: '' }]);
 
+        let currentContent = '';
+        let cleanText = '';
         try {
             const finalRes = await apiClient.chatStream(
                 sessionId,
                 input,
                 activeProvider,
                 (chunk) => {
+                    currentContent += chunk;
+
+                    // Filter out JSON block from visible text as it streams
+                    cleanText = currentContent
+                        .replace(/```json[\s\S]*$/, '') // Hide developing JSON block
+                        .replace(/\{[\s\S]*$/, '')      // Hide bare JSON start
+                        .trim();
+
                     setMessages(prev => prev.map(m =>
-                        m.id === modelMsgId ? { ...m, content: (m.content || '') + chunk } : m
+                        m.id === modelMsgId ? { ...m, content: cleanText } : m
                     ));
                 }
             );
@@ -379,10 +391,6 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
             if (finalRes) {
                 const args = finalRes as any;
                 const reasoning = args.reasoning || "";
-
-                // If the stream already contains the reasoning, we don't want to double it.
-                // But the prompt instructs to provide reasoning twice (once in plain text, once in JSON).
-                // We'll trust ReactMarkdown to handle it.
 
                 if (args.action === 'runPythonAnalysis' || args.action === 'code') {
                     const script = args.content || args.script;
@@ -411,15 +419,17 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                     });
                     setShowLivePanel(true);
 
-                    const responseMsg = args.type === 'table'
-                        ? `I've displayed the raw data for "${args.xAxisKey}" in the Live Board.`
-                        : `I've rendered the "${args.title}" chart in the Live Board for you.`;
-
-                    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', content: responseMsg, isToolOutput: true }]);
+                    setMessages(prev => prev.map(m =>
+                        m.id === modelMsgId ? { ...m, content: (args.explanation || (args.type === 'table' ? `I've analyzed the raw data for "${args.xAxisKey}".` : `I've rendered the "${args.title}" chart for you.`)) } : m
+                    ));
                 } else if (args.action === 'auto_clean') {
-                    // Update content with reasoning_md + success message
                     setMessages(prev => prev.map(m =>
                         m.id === modelMsgId ? { ...m, content: (args.explanation || "✅ Smart Auto-Clean complete!") } : m
+                    ));
+                } else {
+                    // Final fallback for simple text answers
+                    setMessages(prev => prev.map(m =>
+                        m.id === modelMsgId ? { ...m, content: (args.content || args.explanation || cleanText) } : m
                     ));
                 }
             }
