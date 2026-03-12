@@ -32,7 +32,7 @@ const CustomTooltip = ({ active, payload, label, isDarkMode }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className={`p-4 rounded-2xl shadow-2xl border-none backdrop-blur-xl animate-slide-up ${isDarkMode ? 'bg-surface-900/90 text-white' : 'bg-white/90 text-surface-900'}`}>
-        <p className="text-[10px] font-black upperca   tracking-widest mb-2 opacity-50">{label}</p>
+        <p className="text-[10px] font-black uppercase tracking-widest mb-2 opacity-50">{label}</p>
         <div className="space-y-1.5">
           {payload.map((entry: any, index: number) => (
             <div key={index} className="flex items-center gap-3">
@@ -98,8 +98,8 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
         <BarChart data={chartData} margin={margin}>
           <defs>
             <linearGradient id={`barGradient-${item.id}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={colors[0]} stopOpacity={1} />
-              <stop offset="100%" stopColor={colors[0]} stopOpacity={0.6} />
+              <stop offset="0%" stopColor={item.color || colors[0]} stopOpacity={1} />
+              <stop offset="100%" stopColor={item.color || colors[0]} stopOpacity={0.6} />
             </linearGradient>
           </defs>
           {chartAxes}
@@ -122,11 +122,11 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
         <LineChart data={chartData} margin={margin}>
           {chartAxes}
           {hasYAxis ? item.yAxisKeys.map((key, i) => (
-            <Line key={key} type={lineType} dataKey={key} stroke={colors[i % colors.length]} dot={item.showLabels} strokeWidth={3} strokeLinecap="round">
+            <Line key={key} type={lineType} dataKey={key} stroke={item.color || colors[i % colors.length]} dot={item.showLabels} strokeWidth={3} strokeLinecap="round">
               {item.showLabels && <LabelList dataKey={key} {...dataLabelProps} />}
             </Line>
           )) : (
-            <Line type={lineType} dataKey="value" stroke={colors[0]} dot={item.showLabels} strokeWidth={3} strokeLinecap="round">
+            <Line type={lineType} dataKey="value" stroke={item.color || colors[0]} dot={item.showLabels} strokeWidth={3} strokeLinecap="round">
               {item.showLabels && <LabelList dataKey="value" {...dataLabelProps} />}
             </Line>
           )}
@@ -155,7 +155,7 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
             } : false}
           >
             {chartData.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+              <Cell key={`cell-${index}`} fill={index === 0 && item.color ? item.color : colors[index % colors.length]} />
             ))}
           </Pie>
           <Tooltip content={<CustomTooltip isDarkMode={isDarkMode} />} />
@@ -176,11 +176,11 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
           </defs>
           {chartAxes}
           {hasYAxis ? item.yAxisKeys.map((key, i) => (
-            <Area key={key} type={lineType} stackId={item.stacked ? "stack" : undefined} dataKey={key} stroke={colors[i % colors.length]} fill={`url(#areaGradient-${item.id})`} strokeWidth={3} strokeLinecap="round">
+            <Area key={key} type={lineType} stackId={item.stacked ? "stack" : undefined} dataKey={key} stroke={item.color || colors[i % colors.length]} fill={`url(#areaGradient-${item.id})`} strokeWidth={3} strokeLinecap="round">
               {item.showLabels && <LabelList dataKey={key} {...dataLabelProps} />}
             </Area>
           )) : (
-            <Area type={lineType} dataKey="value" stroke={colors[0]} fill={`url(#areaGradient-${item.id})`} strokeWidth={3} strokeLinecap="round">
+            <Area type={lineType} dataKey="value" stroke={item.color || colors[0]} fill={`url(#areaGradient-${item.id})`} strokeWidth={3} strokeLinecap="round">
               {item.showLabels && <LabelList dataKey="value" {...dataLabelProps} />}
             </Area>
           )}

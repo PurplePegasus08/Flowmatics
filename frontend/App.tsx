@@ -160,8 +160,8 @@ function AppContent() {
         onLoadSession={handleLoadSession} onRenameSession={renameSession} onDeleteSession={(id) => deleteSession(id, sessionId, resetData)}
       />
       <main className="flex-1 flex flex-col min-w-0 transition-all relative overflow-hidden">
-        <div className="flex-1 overflow-hidden animate-fade-in">
-          {currentView === AppView.DASHBOARD && (
+        <div className="flex-1 overflow-hidden animate-fade-in relative">
+          <div className={currentView === AppView.DASHBOARD ? 'h-full' : 'hidden h-full'} aria-hidden={currentView !== AppView.DASHBOARD}>
             <Dashboard
               data={data} isDarkMode={isDarkMode} headers={headers} items={dashboardItems}
               onUpdateItem={(id, updates) => setDashboardItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item))}
@@ -173,32 +173,32 @@ function AppContent() {
               }}
               onUndo={() => notify("Undo not implemented for workbench layout yet", "info")}
             />
-          )}
-          {currentView === AppView.DATA && (
+          </div>
+          <div className={currentView === AppView.DATA ? 'h-full' : 'hidden h-full'} aria-hidden={currentView !== AppView.DATA}>
             <DataStudio
               data={data} headers={headers} activeFilters={activeFilters} setActiveFilters={setActiveFilters}
               onFileUpload={handleFileUpload} onProcessData={handleProcessData}
               onRemoveData={() => { resetData(); notify('Dataset purged', 'info'); }}
-              onCleanData={(op) => { if (op === 'remove_duplicates') { /* existing logic moved to processing_service on backend */ handleProcessData('remove_duplicates', {}); } }}
+              onCleanData={(op) => { if (op === 'remove_duplicates') { handleProcessData('remove_duplicates', {}); } }}
               sessionId={sessionId}
               onUndo={handleUndo}
             />
-          )}
-          {currentView === AppView.VISUALIZE && (
+          </div>
+          <div className={currentView === AppView.VISUALIZE ? 'h-full' : 'hidden h-full'} aria-hidden={currentView !== AppView.VISUALIZE}>
             <Visualization
               data={data} isDarkMode={isDarkMode} headers={headers} config={{ ...vizConfig, columnFilters: activeFilters }}
               setConfig={setVizConfig} onAddToDashboard={handleAddToDashboard}
               activeFilters={activeFilters} setActiveFilters={setActiveFilters}
             />
-          )}
-          {currentView === AppView.INSIGHTS && (
+          </div>
+          <div className={currentView === AppView.INSIGHTS ? 'h-full' : 'hidden h-full'} aria-hidden={currentView !== AppView.INSIGHTS}>
             <AiInsights
               data={data} headers={headers} messages={chatMessages} setMessages={setChatMessages}
               onUpdateVisualization={(c) => { setVizConfig({ ...c, theme: 'default', aggregation: 'sum' }); setCurrentView(AppView.VISUALIZE); }}
               onCleanData={() => handleProcessData('remove_duplicates', {})}
               onAddToDashboard={handleAddToDashboard} sessionId={sessionId}
             />
-          )}
+          </div>
         </div>
       </main>
       <SettingsModal isOpen={isSettingsOpen} isDarkMode={isDarkMode} onToggleDarkMode={() => setIsDarkMode(!isDarkMode)} onClose={() => setIsSettingsOpen(false)} />

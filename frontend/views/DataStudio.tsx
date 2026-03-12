@@ -401,10 +401,12 @@ export const DataStudio: React.FC<DataStudioProps> = ({
                               onClick={() => toggleFilterValue(segmentColumn, val)}
                               className={`px-3 py-2 rounded-xl text-[10px] font-bold border transition-all ${(activeFilters[segmentColumn] || []).includes(val)
                                 ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg'
-                                : 'bg-surface-50 dark:bg-surface-900 border-surface-100 dark:border-surface-700 text-surface-500 hover:border-indigo-400'
+                                : (val === null || val === undefined || val === '')
+                                  ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-600 dark:text-amber-400 font-black'
+                                  : 'bg-surface-50 dark:bg-surface-900 border-surface-100 dark:border-surface-700 text-surface-500 hover:border-indigo-400'
                                 }`}
                             >
-                              {val === null ? 'null' : String(val)}
+                              {val === null || val === undefined || val === '' ? 'Ø NULL' : String(val)}
                             </button>
                           ))}
                         </div>
@@ -543,6 +545,15 @@ export const DataStudio: React.FC<DataStudioProps> = ({
           </div>
         </div>
       </header>
+
+      {isProcessing && (
+        <div className="absolute inset-0 z-[100] bg-white/20 dark:bg-slate-950/20 backdrop-blur-[2px] flex items-center justify-center animate-fade-in">
+          <div className="bg-white dark:bg-surface-800 px-8 py-6 rounded-[2rem] shadow-2xl border border-surface-200 dark:border-surface-700 flex flex-col items-center gap-4">
+            <div className="w-12 h-12 rounded-full border-4 border-indigo-500/20 border-t-indigo-600 animate-spin"></div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-surface-900 dark:text-white">Synthesizing Logic...</p>
+          </div>
+        </div>
+      )}
 
       {/* Active Segments Bar */}
       {Object.keys(activeFilters).length > 0 && (
@@ -693,11 +704,16 @@ export const DataStudio: React.FC<DataStudioProps> = ({
 
                   // Color coding: Nulls
                   if (val === null || val === undefined || val === '') {
-                    cellClass += "bg-amber-50/20 dark:bg-amber-900/5 ";
+                    cellClass += "bg-amber-50 dark:bg-amber-900/20 ";
+                    content = (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
+                        Ø NULL
+                      </span>
+                    );
                   }
 
                   // Color coding: Outliers for numeric
-                  if (type === 'numeric' && val !== null) {
+                  if (type === 'numeric' && val !== null && val !== undefined && val !== '') {
                     const num = Number(val);
                     if (stats.highest && num === stats.highest) cellClass += "text-emerald-600 font-bold ";
                     if (stats.lowest && num === stats.lowest) cellClass += "text-red-500 font-bold ";
@@ -705,7 +721,7 @@ export const DataStudio: React.FC<DataStudioProps> = ({
 
                   return (
                     <td key={h} className={cellClass}>
-                      <span className="truncate block max-w-[200px]" title={String(val)}>{content}</span>
+                      <span className="truncate block max-w-[200px]" title={val === null ? 'null' : String(val)}>{content}</span>
                     </td>
                   );
                 })}

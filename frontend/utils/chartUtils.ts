@@ -111,28 +111,32 @@ export const processChartData = (data: DataRow[], config: ChartConfig) => {
     const yKey = config.yAxisKeys?.[0] || '';
 
     // Create mapping for non-numeric (categorical) values to enable plotting
-    const xUnique = Array.from(new Set(filteredSource.map(r => String(r[xKey])))).sort();
-    const yUnique = Array.from(new Set(filteredSource.map(r => String(r[yKey])))).sort();
+    // Improved: filter out nulls for the unique list but handle them in the mapping
+    const xUnique = Array.from(new Set(filteredSource.map(r => r[xKey] === null || r[xKey] === undefined || r[xKey] === '' ? 'Ø NULL' : String(r[xKey])))).sort();
+    const yUnique = Array.from(new Set(filteredSource.map(r => r[yKey] === null || r[yKey] === undefined || r[yKey] === '' ? 'Ø NULL' : String(r[yKey])))).sort();
 
     return filteredSource
       .map(row => {
         const xRaw = row[xKey];
         const yRaw = row[yKey];
-        const xNum = Number(xRaw);
-        const yNum = Number(yRaw);
+        const isXNull = xRaw === null || xRaw === undefined || xRaw === '';
+        const isYNull = yRaw === null || yRaw === undefined || yRaw === '';
+
+        const xNum = isXNull ? NaN : Number(xRaw);
+        const yNum = isYNull ? NaN : Number(yRaw);
 
         // If not a number, map to index in unique sorted values
-        const x = isNaN(xNum) || xRaw === '' || xRaw === null ? xUnique.indexOf(String(xRaw)) : xNum;
-        const y = isNaN(yNum) || yRaw === '' || yRaw === null ? yUnique.indexOf(String(yRaw)) : yNum;
+        const x = isNaN(xNum) ? xUnique.indexOf(isXNull ? 'Ø NULL' : String(xRaw)) : xNum;
+        const y = isNaN(yNum) ? yUnique.indexOf(isYNull ? 'Ø NULL' : String(yRaw)) : yNum;
 
         return {
           ...row,
-          name: String(xRaw),
+          name: isXNull ? 'Ø NULL' : String(xRaw),
           x,
           y,
-          z: config.zAxisKey ? Math.abs(Number(row[config.zAxisKey])) : 100,
-          _xLabel: String(xRaw),
-          _yLabel: String(yRaw)
+          z: config.zAxisKey ? Math.abs(Number(row[config.zAxisKey] || 0)) : 100,
+          _xLabel: isXNull ? 'Ø NULL' : String(xRaw),
+          _yLabel: isYNull ? 'Ø NULL' : String(yRaw)
         };
       })
       .filter(pt => typeof pt.x === 'number' && typeof pt.y === 'number')
@@ -253,7 +257,9 @@ export const processChartData = (data: DataRow[], config: ChartConfig) => {
 
     groupedData[xValue]._count += 1;
     config.yAxisKeys?.forEach(key => {
-      const val = Number(row[key]);
+      const rawVal = row[key];
+      if (rawVal === null || rawVal === undefined || rawVal === '') return;
+      const val = Number(rawVal);
       if (!isNaN(val)) {
         groupedData[xValue]._sums[key] += val;
         groupedData[xValue]._mins[key] = Math.min(groupedData[xValue]._mins[key], val);

@@ -45,7 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const fetchSessions = async () => {
     try {
-      const data: any = await apiClient.get('/api/sessions');
+      const data = await apiClient.listSessions();
       setSessions(data);
     } catch (e) {
       console.error("Failed to load sessions", e);

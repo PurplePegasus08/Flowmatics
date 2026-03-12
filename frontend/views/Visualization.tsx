@@ -92,13 +92,15 @@ export const Visualization: React.FC<VisualizationProps> = ({
   };
 
   const renderChart = () => {
-    if (!config.xAxisKey) return (
-      <div className="h-full flex flex-col items-center justify-center text-surface-400 bg-surface-50/50 dark:bg-surface-800/20 rounded-[3rem] border-2 border-dashed border-surface-200 dark:border-surface-700 transition-colors">
-        <Sparkles className="w-16 h-16 mb-8 opacity-10 animate-pulse text-indigo-500" />
-        <p className="text-sm font-black uppercase tracking-[0.3em] text-surface-400 dark:text-surface-500">Initialize Dimensions</p>
-        <p className="text-[10px] text-surface-300 dark:text-surface-600 mt-4 font-bold tracking-widest uppercase text-center max-w-xs">Select an X-Axis column in the Architect panel</p>
+    <div className="h-full flex flex-col items-center justify-center text-surface-400 bg-surface-50/30 dark:bg-surface-900/40 rounded-[4rem] border border-dashed border-surface-200 dark:border-surface-800 transition-all p-12">
+      <div className="w-24 h-24 bg-white dark:bg-surface-800 rounded-[2.5rem] shadow-soft flex items-center justify-center mb-10 border border-surface-100 dark:border-surface-700 animate-pulse">
+        <Sparkles className="w-10 h-10 text-indigo-500" />
       </div>
-    );
+      <h3 className="text-sm font-black uppercase tracking-[0.4em] text-surface-900 dark:text-white mb-4">Initialize Synaptic Core</h3>
+      <p className="text-[11px] text-surface-400 dark:text-surface-500 font-bold tracking-widest uppercase text-center max-w-sm leading-relaxed">
+        Select an X-Axis dimension in the Architect panel to begin projection
+      </p>
+    </div>
 
     const hasY = config.yAxisKeys && config.yAxisKeys.length > 0;
     const common = { margin: { top: 40, right: 40, left: 20, bottom: 40 }, data: chartData };
@@ -476,10 +478,12 @@ export const Visualization: React.FC<VisualizationProps> = ({
                         onClick={() => handleSegmentToggle(segmentColumn, val)}
                         className={`px-3 py-2 rounded-xl text-[10px] font-bold border transition-all ${(activeFilters[segmentColumn] || []).includes(val)
                           ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg'
-                          : 'bg-white dark:bg-surface-900 border-surface-100 dark:border-surface-700 text-surface-500 hover:border-indigo-400'
+                          : (val === null || val === undefined || val === '')
+                            ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-600 dark:text-amber-400 font-black'
+                            : 'bg-white dark:bg-surface-900 border-surface-100 dark:border-surface-700 text-surface-500 hover:border-indigo-400'
                           }`}
                       >
-                        {val === null ? 'null' : String(val)}
+                        {val === null || val === undefined || val === '' ? 'Ø NULL' : String(val)}
                       </button>
                     ))}
                   </div>

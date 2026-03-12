@@ -218,11 +218,19 @@ const LiveChart = ({ config, data }: { config: ChartConfig, data: DataRow[] }) =
                         {tableData.map((row, i) => (
                             <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                 <td className="p-3 font-mono text-xs text-slate-400">{i + 1}</td>
-                                {columns.map(col => (
-                                    <td key={`${i}-${col}`} className="p-3 text-slate-700 dark:text-slate-300 truncate max-w-[200px]">
-                                        {String(row[col])}
-                                    </td>
-                                ))}
+                                {columns.map(col => {
+                                    const val = row[col];
+                                    const isNull = val === null || val === undefined || val === '';
+                                    return (
+                                        <td key={`${i}-${col}`} className={`p-3 text-slate-700 dark:text-slate-300 truncate max-w-[200px] ${isNull ? 'bg-amber-500/5' : ''}`}>
+                                            {isNull ? (
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                                    Ø NULL
+                                                </span>
+                                            ) : String(val)}
+                                        </td>
+                                    );
+                                })}
                             </tr>
                         ))}
                     </tbody>
