@@ -91,7 +91,7 @@ interface AiInsightsProps {
     sessionId: string;
 }
 
-const PythonCodeBlock = ({ script, explanation, sessionId }: { script: string, explanation: string, sessionId: string }) => {
+const PythonCodeBlock = ({ script, explanation, sessionId, onExecute }: { script: string, explanation: string, sessionId: string, onExecute?: () => void }) => {
     const [isExecuting, setIsExecuting] = useState(false);
     const [hasExecuted, setHasExecuted] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -119,6 +119,7 @@ const PythonCodeBlock = ({ script, explanation, sessionId }: { script: string, e
                 setHasExecuted(true);
                 // Backend now returns markdown formatted text with diffs
                 setOutput(data.text);
+                onExecute?.();
             }
         } catch (e) {
             setOutput(`Execution failed: ${e}`);
@@ -256,6 +257,20 @@ const LiveChart = ({ config, data }: { config: ChartConfig, data: DataRow[] }) =
                     <Bar dataKey={dataKey} fill={colors[0]} radius={[4, 4, 0, 0]} animationDuration={500} />
                 </BarChart>
             );
+            case 'distribution':
+            case 'histogram': return (
+                <BarChart {...commonProps}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
+                    <XAxis dataKey="name" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                    <Tooltip
+                        cursor={{ fill: 'transparent' }}
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '11px' }}
+                        labelFormatter={(label) => `Range: ${label}`}
+                        formatter={(value) => [value, 'Frequency']}
+                    />
+                    <Bar dataKey="value" fill={colors[0]} radius={[4, 4, 0, 0]} animationDuration={500} />
+                </BarChart>
+            );
             case 'line': return (
                 <LineChart {...commonProps}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
@@ -322,7 +337,7 @@ const LiveChart = ({ config, data }: { config: ChartConfig, data: DataRow[] }) =
 export const AiInsights: React.FC<AiInsightsProps> = ({
     data, headers, messages, setMessages, onUpdateVisualization, onCleanData, onAddToDashboard, sessionId
 }) => {
-    const { activeProvider } = useData();
+    const { activeProvider, loadSession } = useData();
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -430,14 +445,20 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                     setMessages(prev => prev.map(m =>
                         m.id === modelMsgId ? { ...m, content: (args.explanation || (args.type === 'table' ? `I've analyzed the raw data for "${args.xAxisKey}".` : `I've rendered the "${args.title}" chart for you.`)) } : m
                     ));
-                } else if (args.action === 'auto_clean') {
+                } else if (args.action === 'auto_clean' || args.action === 'prepare_for_ml') {
+                    // Trigger refresh for data-modifying actions
+                    setTimeout(() => loadSession(sessionId), 500);
                     setMessages(prev => prev.map(m =>
-                        m.id === modelMsgId ? { ...m, content: (args.explanation || "✅ Smart Auto-Clean complete!") } : m
+                        m.id === modelMsgId ? { ...m, content: (args.explanation || (args.action === 'auto_clean' ? "✅ Smart Auto-Clean complete!" : "✅ ML Preparation complete!")) } : m
                     ));
                 } else {
                     // Final fallback for simple text answers
                     setMessages(prev => prev.map(m =>
-                        m.id === modelMsgId ? { ...m, content: (args.content || args.explanation || cleanText) } : m
+                        m.id === modelMsgId ? {
+                            ...m,
+                            content: (args.content || args.explanation || cleanText),
+                            suggestedNextSteps: args.suggested_next_steps || []
+                        } : m
                     ));
                 }
             }
@@ -534,48 +555,77 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                         if (isPython) { try { pythonData = JSON.parse(msg.content.replace('PYTHON_CODE_BLOCK:', '')); } catch (e) { } }
 
                         return (
-                            <div key={msg.id} className={`flex gap-8 animate-fade-in ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                                <div className={`w-12 h-12 rounded-[1.25rem] flex-shrink-0 flex items-center justify-center shadow-2xl transition-all ${msg.role === 'user' ? 'bg-white dark:bg-slate-800 text-slate-500 ring-1 ring-slate-100 dark:ring-slate-700' : 'bg-indigo-600 text-white shadow-indigo-600/30'}`}>
-                                    {msg.role === 'user' ? <User className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
+                            <React.Fragment key={msg.id}>
+                                <div className={`flex gap-8 animate-fade-in ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                                    <div className={`w-12 h-12 rounded-[1.25rem] flex-shrink-0 flex items-center justify-center shadow-2xl transition-all ${msg.role === 'user' ? 'bg-white dark:bg-slate-800 text-slate-500 ring-1 ring-slate-100 dark:ring-slate-700' : 'bg-indigo-600 text-white shadow-indigo-600/30'}`}>
+                                        {msg.role === 'user' ? <User className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
+                                    </div>
+                                    <div className={`p-8 rounded-[2.5rem] max-w-[85%] text-sm leading-relaxed shadow-sm transition-all ${msg.role === 'user'
+                                        ? 'bg-indigo-600 text-white rounded-tr-none font-medium'
+                                        : isPython
+                                            ? 'bg-transparent p-0 border-none max-w-full w-full'
+                                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-tl-none border border-slate-100 dark:border-slate-800 chat-markdown'
+                                        }`}>
+                                        {isPython && pythonData ? (
+                                            <PythonCodeBlock
+                                                script={pythonData.script}
+                                                explanation={pythonData.explanation}
+                                                sessionId={sessionId}
+                                                onExecute={() => loadSession(sessionId)}
+                                            />
+                                        ) : (
+                                            <ReactMarkdown
+                                                remarkPlugins={[remarkGfm]}
+                                                components={{
+                                                    blockquote: ({ children }) => <MarkdownAlert>{children}</MarkdownAlert>,
+                                                    code({ node, inline, className, children, ...props }: any) {
+                                                        const match = /language-(\w+)/.exec(className || '')
+                                                        return !inline && match ? (
+                                                            <SyntaxHighlighter
+                                                                style={atomDark}
+                                                                language={match[1]}
+                                                                PreTag="div"
+                                                                customStyle={{ borderRadius: '1rem', margin: '1rem 0' }}
+                                                                {...props}
+                                                            >
+                                                                {String(children).replace(/\n$/, '')}
+                                                            </SyntaxHighlighter>
+                                                        ) : (
+                                                            <code className={className} {...props}>
+                                                                {children}
+                                                            </code>
+                                                        )
+                                                    }
+                                                }}
+                                            >
+                                                {msg.content}
+                                            </ReactMarkdown>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className={`p-8 rounded-[2.5rem] max-w-[85%] text-sm leading-relaxed shadow-sm transition-all ${msg.role === 'user'
-                                    ? 'bg-indigo-600 text-white rounded-tr-none font-medium'
-                                    : isPython
-                                        ? 'bg-transparent p-0 border-none max-w-full w-full'
-                                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-tl-none border border-slate-100 dark:border-slate-800 chat-markdown'
-                                    }`}>
-                                    {isPython && pythonData ? (
-                                        <PythonCodeBlock script={pythonData.script} explanation={pythonData.explanation} sessionId={sessionId} />
-                                    ) : (
-                                        <ReactMarkdown
-                                            remarkPlugins={[remarkGfm]}
-                                            components={{
-                                                blockquote: ({ children }) => <MarkdownAlert>{children}</MarkdownAlert>,
-                                                code({ node, inline, className, children, ...props }: any) {
-                                                    const match = /language-(\w+)/.exec(className || '')
-                                                    return !inline && match ? (
-                                                        <SyntaxHighlighter
-                                                            style={atomDark}
-                                                            language={match[1]}
-                                                            PreTag="div"
-                                                            customStyle={{ borderRadius: '1rem', margin: '1rem 0' }}
-                                                            {...props}
-                                                        >
-                                                            {String(children).replace(/\n$/, '')}
-                                                        </SyntaxHighlighter>
-                                                    ) : (
-                                                        <code className={className} {...props}>
-                                                            {children}
-                                                        </code>
-                                                    )
-                                                }
-                                            }}
-                                        >
-                                            {msg.content}
-                                        </ReactMarkdown>
-                                    )}
-                                </div>
-                            </div>
+                                {/* Suggested Next Steps */}
+                                {msg.role === 'model' && msg.suggestedNextSteps && msg.suggestedNextSteps.length > 0 && !loading && (
+                                    <div className="flex flex-wrap gap-2 ml-20 mt-2 animate-fade-in">
+                                        {msg.suggestedNextSteps.map((step, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => {
+                                                    setInput(step);
+                                                    // We use a small timeout to let the input update before sending, 
+                                                    // but handleSend uses 'input' state which might not be updated yet.
+                                                    // Better to pass the text directly to a modified send function if possible,
+                                                    // or just rely on the user clicking Enter.
+                                                    // Actually, let's just trigger send with the step text.
+                                                }}
+                                                className="px-4 py-2 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-full text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all flex items-center gap-2 group"
+                                            >
+                                                <Sparkles className="w-3 h-3 text-indigo-400 group-hover:scale-110 transition-transform" />
+                                                {step}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </React.Fragment>
                         );
                     })}
                     {loading && (

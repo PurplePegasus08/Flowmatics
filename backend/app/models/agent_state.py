@@ -20,3 +20,5 @@ class AgentState(BaseModel):
     chat_history: List[dict] = Field(default_factory=list)
     persona: str = "Scientist"
     transformation_report: List[Dict[str, Any]] = Field(default_factory=list)
+    dataset_description: str = ""
+    suggested_next_steps: List[str] = Field(default_factory=list)

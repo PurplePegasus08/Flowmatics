@@ -9,12 +9,14 @@ interface DataContextType {
     sessionId: string;
     dashboardItems: DashboardItem[];
     activeProvider: string;
+    datasetDescription: string;
     setData: (data: DataRow[]) => void;
     setHeaders: (headers: string[]) => void;
     setSessionId: (id: string) => void;
     setDashboardItems: React.Dispatch<React.SetStateAction<DashboardItem[]>>;
     setActiveProvider: (provider: string) => void;
-    uploadFile: (file: File) => Promise<void>;
+    uploadFile: (file: File, description?: string) => Promise<void>;
+    updateDescription: (description: string) => Promise<void>;
     processData: (action: string, payload: any) => Promise<void>;
     loadSession: (sid: string) => Promise<any>;
     resetData: () => void;
@@ -28,6 +30,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [sessionId, setSessionId] = useState<string>("default");
     const [dashboardItems, setDashboardItems] = useState<DashboardItem[]>([]);
     const [activeProvider, setActiveProvider] = useState<string>("gemini");
+    const [datasetDescription, setDatasetDescription] = useState<string>("");
     const { notify } = useNotification();
 
     // Sync provider status on mount
@@ -48,6 +51,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setHeaders([]);
         setDashboardItems([]);
         setSessionId("default");
+        setDatasetDescription("");
     }, []);
 
     const loadSession = useCallback(async (sid: string) => {
@@ -61,6 +65,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setData(dataContent.rows);
                 setHeaders(Object.keys(dataContent.rows[0]));
             }
+            if (sessionData.description) {
+                setDatasetDescription(sessionData.description);
+            }
             notify("Session restored successfully", "success");
             return sessionData;
         } catch (e: any) {
@@ -69,16 +76,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, [notify]);
 
-    const uploadFile = useCallback(async (file: File) => {
+    const uploadFile = useCallback(async (file: File, description: string = "") => {
         try {
             notify("Uploading dataset...", "info");
-            const res = await apiClient.uploadFile(file);
+            const res = await apiClient.uploadFile(file, description);
 
             if (res.sessionId) {
                 setSessionId(res.sessionId);
                 if (res.preview && res.preview.length > 0) {
                     setData(res.preview);
                     setHeaders(Object.keys(res.preview[0]));
+                    if (res.description) setDatasetDescription(res.description);
                     notify(`Dataset Uploaded: ${res.totalRows?.toLocaleString() || 'Many'} records.`, 'success');
                 }
             }
@@ -87,6 +95,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             throw e;
         }
     }, [notify]);
+
+    const updateDescription = useCallback(async (description: string) => {
+        try {
+            await apiClient.updateDescription(sessionId, description);
+            setDatasetDescription(description);
+            notify("Context updated successfully", "success");
+        } catch (e: any) {
+            notify(`Update context failed: ${e.message}`, "error");
+        }
+    }, [sessionId, notify]);
 
     const processData = useCallback(async (action: string, payload: any) => {
         try {
@@ -109,9 +127,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return (
         <DataContext.Provider value={{
-            data, headers, sessionId, dashboardItems, activeProvider,
+            data, headers, sessionId, dashboardItems, activeProvider, datasetDescription,
             setData, setHeaders, setSessionId, setDashboardItems, setActiveProvider,
-            uploadFile, processData, loadSession, resetData
+            uploadFile, updateDescription, processData, loadSession, resetData
         }}>
             {children}
         </DataContext.Provider>

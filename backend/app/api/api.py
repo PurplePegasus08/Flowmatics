@@ -99,6 +99,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.post("/api/upload", summary="Upload dataset", tags=["Data Management"])
 async def upload(
     file: UploadFile = File(...),
+    description: str = Body(""),
     background_tasks: BackgroundTasks = None
 ):
     """
@@ -121,7 +122,7 @@ async def upload(
         
         # Process upload via AgentService
         state = AgentState()
-        state = agent_service.upload(state, content, file.filename)
+        state = agent_service.upload(state, content, file.filename, description)
         
         # Create session
         session_id = str(uuid.uuid4())
@@ -152,7 +153,8 @@ async def upload(
             "shape": f"{total_rows} rows" + (f" × {len(df.columns)} columns" if 'df' in locals() else ""),
             "preview": preview_rows,
             "stats": state.user_message,
-            "totalRows": total_rows
+            "totalRows": total_rows,
+            "description": state.dataset_description
         }
         
     except HTTPException:
@@ -265,6 +267,9 @@ async def chat_stream(req: ChatRequest):
         async for chunk_data in service.stream_execute(state):
             # Format as SSE
             yield f"data: {json.dumps(chunk_data)}\n\n"
+        
+        # PERSIST STATE after stream finishes (in case actions updated state.work_id)
+        session_service.save_session(req.sessionId, state)
             
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -636,6 +641,19 @@ async def get_proactive_insights(session_id: str):
     except Exception as e:
         logger.error(f"Proactive insights error: {e}")
         raise HTTPException(500, sanitize_error_message(e))
+
+@app.put('/api/session/{session_id}/description', summary="Update dataset description", tags=["Data Management"])
+async def update_description(session_id: str, payload: dict = Body(...)):
+    """Update the dataset goal/description for better AI context."""
+    state = session_service.load_session(session_id)
+    if not state:
+        raise HTTPException(404, "Session not found")
+    
+    description = payload.get("description", "")
+    state.dataset_description = description
+    session_service.save_session(session_id, state)
+    
+    return {"status": "success", "description": description}
 
 @app.get('/api/reproducibility/export/{session_id}', summary="Export cleaning script", tags=["Data Management"])
 async def export_reproducibility_script(session_id: str):

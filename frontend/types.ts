@@ -25,7 +25,7 @@ export interface ColumnStats {
   totalRows: number;
 }
 
-export type ChartType = 'bar' | 'line' | 'scatter' | 'pie' | 'area' | 'heatmap' | 'doughnut' | 'bubble' | 'box' | 'venn' | 'contour' | 'table' | 'radar' | 'treemap' | 'heatmap_matrix' | 'step_line' | 'funnel';
+export type ChartType = 'bar' | 'line' | 'scatter' | 'pie' | 'area' | 'heatmap' | 'doughnut' | 'bubble' | 'box' | 'venn' | 'contour' | 'table' | 'radar' | 'treemap' | 'heatmap_matrix' | 'step_line' | 'funnel' | 'distribution' | 'histogram';
 export type ThemeType = 'default' | 'neon' | 'pastel' | 'dark' | 'professional';
 export type AggregationType = 'sum' | 'avg' | 'min' | 'max' | 'count';
 export type SortOrder = 'none' | 'asc' | 'desc';
@@ -86,6 +86,7 @@ export interface ChatMessage {
   role: 'user' | 'model' | 'system';
   content: string;
   isToolOutput?: boolean;
+  suggestedNextSteps?: string[];
 }
 
 export enum AppView {

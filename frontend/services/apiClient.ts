@@ -46,10 +46,11 @@ class APIClient {
     }
 
     // Data endpoints
-    async uploadFile(file: File) {
+    async uploadFile(file: File, description: string = "") {
         const url = getApiUrl('/api/upload');
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('description', description);
 
         const response = await fetch(url, {
             method: 'POST',
@@ -140,6 +141,13 @@ class APIClient {
                 }
             }
         }
+    }
+
+    async updateDescription(sessionId: string, description: string) {
+        return this.fetchJson<any>(`/api/session/${sessionId}/description`, {
+            method: 'PUT',
+            body: JSON.stringify({ description }),
+        });
     }
 
     async getLLMStatus() {

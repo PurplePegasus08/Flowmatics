@@ -105,43 +105,38 @@ export const processChartData = (data: DataRow[], config: ChartConfig) => {
     }).filter(Boolean);
   }
 
-  // 4. SCATTER & BUBBLE (Raw Data)
-  if (config.type === 'scatter' || config.type === 'bubble') {
-    const xKey = config.xAxisKey;
-    const yKey = config.yAxisKeys?.[0] || '';
+  // 4. DISTRIBUTION / HISTOGRAM (Binned Frequency)
+  if (config.type === 'distribution' || config.type === 'histogram') {
+    const key = config.xAxisKey;
+    const values = filteredSource.map(r => Number(r[key])).filter(v => !isNaN(v));
+    if (values.length === 0) return [];
 
-    // Create mapping for non-numeric (categorical) values to enable plotting
-    // Improved: filter out nulls for the unique list but handle them in the mapping
-    const xUnique = Array.from(new Set(filteredSource.map(r => r[xKey] === null || r[xKey] === undefined || r[xKey] === '' ? 'Ø NULL' : String(r[xKey])))).sort();
-    const yUnique = Array.from(new Set(filteredSource.map(r => r[yKey] === null || r[yKey] === undefined || r[yKey] === '' ? 'Ø NULL' : String(r[yKey])))).sort();
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+    const binCount = 10;
+    const binSize = range / binCount;
 
-    return filteredSource
-      .map(row => {
-        const xRaw = row[xKey];
-        const yRaw = row[yKey];
-        const isXNull = xRaw === null || xRaw === undefined || xRaw === '';
-        const isYNull = yRaw === null || yRaw === undefined || yRaw === '';
+    const bins = Array.from({ length: binCount }, (_, i) => {
+      const start = min + i * binSize;
+      const end = start + binSize;
+      return {
+        name: `${start.toFixed(1)}-${end.toFixed(1)}`,
+        value: 0,
+        _start: start,
+        _end: end
+      };
+    });
 
-        const xNum = isXNull ? NaN : Number(xRaw);
-        const yNum = isYNull ? NaN : Number(yRaw);
+    values.forEach(v => {
+      const idx = Math.min(Math.floor((v - min) / binSize), binCount - 1);
+      if (bins[idx]) bins[idx].value++;
+    });
 
-        // If not a number, map to index in unique sorted values
-        const x = isNaN(xNum) ? xUnique.indexOf(isXNull ? 'Ø NULL' : String(xRaw)) : xNum;
-        const y = isNaN(yNum) ? yUnique.indexOf(isYNull ? 'Ø NULL' : String(yRaw)) : yNum;
-
-        return {
-          ...row,
-          name: isXNull ? 'Ø NULL' : String(xRaw),
-          x,
-          y,
-          z: config.zAxisKey ? Math.abs(Number(row[config.zAxisKey] || 0)) : 100,
-          _xLabel: isXNull ? 'Ø NULL' : String(xRaw),
-          _yLabel: isYNull ? 'Ø NULL' : String(yRaw)
-        };
-      })
-      .filter(pt => typeof pt.x === 'number' && typeof pt.y === 'number')
-      .slice(0, 1000);
+    return bins;
   }
+
+  // 5. SCATTER & BUBBLE (Raw Data)
 
   // 5. RADAR CHART (Multivariate Comparison)
   if (config.type === 'radar') {

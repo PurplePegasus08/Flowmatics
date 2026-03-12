@@ -21,9 +21,9 @@ function AppContent() {
 
   const { notify } = useNotification();
   const {
-    data, headers, sessionId, dashboardItems,
+    data, headers, sessionId, dashboardItems, datasetDescription,
     setData, setHeaders, setDashboardItems,
-    uploadFile, loadSession, resetData
+    uploadFile, updateDescription, loadSession, resetData
   } = useData();
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -79,9 +79,9 @@ function AppContent() {
     }
   };
 
-  const handleFileUpload = async (file: File) => {
+  const handleFileUpload = async (file: File, description: string = "") => {
     try {
-      await uploadFile(file);
+      await uploadFile(file, description);
       setCurrentView(AppView.DATA);
     } catch (err) {
       console.error("Upload failed:", err);
@@ -182,6 +182,8 @@ function AppContent() {
               onCleanData={(op) => { if (op === 'remove_duplicates') { handleProcessData('remove_duplicates', {}); } }}
               sessionId={sessionId}
               onUndo={handleUndo}
+              datasetDescription={datasetDescription}
+              onUpdateDescription={updateDescription}
             />
           </div>
           <div className={currentView === AppView.VISUALIZE ? 'h-full' : 'hidden h-full'} aria-hidden={currentView !== AppView.VISUALIZE}>

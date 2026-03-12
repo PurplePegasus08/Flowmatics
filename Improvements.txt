@@ -1,0 +1,9 @@
+1. Architectural Improvements (Practicality)
+DuckDB Integration: Currently, you use Pandas for everything. Integrating DuckDB on the backend would allow for lightning-fast SQL execution directly on your Parquet files. This would make the "Table" view much more powerful, allowing users to run complex SQL queries alongside AI-generated Python.
+Persistent Variable State in REPL: Right now, the REPL executes scripts somewhat atomically. Improving it to maintain a persistent Python kernel (perhaps using ipykernel) would allow users to build on previous results (e.g., define a function in one message, use it in another) without re-running the entire script.
+
+
+2. Advanced AI Workflow (Usefulness)
+Automated Insights Narratives: Instead of just bullet points, the AI could generate a "Executive Summary Document" that combines charts and text into a cohesive report (PDF or Markdown export).
+"Explain this Data Point": Add a feature where clicking a specific outlier or cell in the Data Studio table asks the AI to explain why it's considered an anomaly or what its impact is on the overall distribution.
+Feature Importance & Explainability: When the AI prepares data for ML, it could automatically generate a SHAP or LIME plot to show which features are most "ready" or influential, giving the user immediate feedback on their engineering efforts.

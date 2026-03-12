@@ -58,10 +58,14 @@ class AgentService(BaseAgentService):
                 state.next_node = "execute" if state.retry_count < state.MAX_RETRIES else "human_input"
                 return state
 
+        return self.handle_action(state, res)
+
+    def handle_action(self, state: AgentState, res: dict) -> AgentState:
         try:
             action = res.get("action")
             content = res.get("content", "")
             reasoning = res.get("reasoning", "")
+            state.suggested_next_steps = res.get("suggested_next_steps", [])
             
             # Incorporate reasoning into the user message for transparency if requested
             reasoning_md = f"> [!TIP]\n> **AI Reasoning:** {reasoning}\n\n" if reasoning else ""
@@ -72,23 +76,15 @@ class AgentService(BaseAgentService):
                 state.next_node = "human_input"
             elif action == "visualize":
                 state.last_tool = {"name": "generateVisualization", "args": {k: res.get(k, "") for k in ["title", "type", "xAxisKey", "yAxisKey"]}}
-                state.user_message = reasoning_md + "Generating visualization..."
+                state.user_message = reasoning_md + (res.get("explanation") or "Generating visualization...")
                 state.next_node = "human_input"
             elif action == "code":
+                # For code, we often just want to show it to the user in the REPL first,
+                # but if it was intended to be automatic, we'd run it.
+                # Currently the frontend handles code blocks.
                 state.last_tool = {"name": "runPythonAnalysis", "args": {"script": content, "explanation": res.get("explanation", "")}}
-                self.push_undo(state, f"Code: {content[:60]}...")
-                df = store.get_df(state.work_id)
-                new_df, err, stdout = exec_code(content, df)
-                if err:
-                    state.error = err
-                    state.retry_count += 1
-                    state.next_node = "execute" if state.retry_count < state.MAX_RETRIES else "human_input"
-                else:
-                    state.work_id = store.write_df(new_df)
-                    diff = compare_dataframes(df, new_df)
-                    state.user_message = reasoning_md + f"✅ Code executed successfully\n\n### Data Changes\n{diff}" + (f"\n\n**Output:**\n```\n{stdout}\n```" if stdout else "")
-                    state.error, state.retry_count = None, 0
-                    state.next_node = "human_input"
+                state.user_message = reasoning_md + (res.get("explanation") or "I've written some code to process the data.")
+                state.next_node = "human_input"
             elif action == "auto_clean":
                 state.last_tool = {"name": "autoCleanData", "args": {}}
                 df = store.get_df(state.work_id)
@@ -113,11 +109,13 @@ class AgentService(BaseAgentService):
                 state.user_message = f"✅ ML Preparation complete!\n\nDataset is now fully numeric and scaled, ready for training.\n\n### Engineering Logic\n{report_md}\n\n### Data Changes\n{diff}"
                 state.error, state.retry_count = None, 0
                 state.next_node = "human_input"
+            
+            return state
         except Exception as e:
-            logger.error(f"Execution node error: {e}")
+            logger.error(f"Action handler error: {e}")
             state.error = str(e)
-            state.retry_count += 1
-            state.next_node = "execute" if state.retry_count < state.MAX_RETRIES else "human_input"
+            state.next_node = "human_input"
+            return state
     async def stream_execute(self, state: AgentState):
         if self.llm is None:
             yield {"type": "error", "text": "LLM not initialized."}
@@ -132,8 +130,40 @@ class AgentService(BaseAgentService):
                 full_text += content
                 yield {"type": "chunk", "text": content}
             
-            m = re.search(r'```json\s*(\{.*?\})\s*```', full_text, re.S) or re.search(r'(\{.*?\})', full_text, re.S)
-            res = json.loads(m.group(1)) if m else {"action": "answer", "content": full_text}
+            def extract_json(text):
+                # Try to find the last complete JSON block
+                # First, look for ```json ... ```
+                matches = list(re.finditer(r'```json\s*(\{.*?\})\s*```', text, re.S))
+                if matches:
+                    try: return json.loads(matches[-1].group(1))
+                    except: pass
+                
+                # Then look for bare { ... }
+                # We search from the end to find the most complete block
+                for i in range(len(text)-1, -1, -1):
+                    if text[i] == '}':
+                        for j in range(text.find('{'), i):
+                            if text[j] == '{':
+                                try:
+                                    # Try parsing this candidate block
+                                    return json.loads(text[j:i+1])
+                                except:
+                                    continue
+                return None
+
+            res = extract_json(full_text)
+            if not res:
+                # If no JSON found, treat as simple answer
+                res = {"action": "answer", "content": full_text}
+            
+            # Update state with suggested steps if present
+            if isinstance(res, dict):
+                state.suggested_next_steps = res.get("suggested_next_steps", [])
+                
+                # Execute action and update state/session
+                if res.get("action") in ("auto_clean", "prepare_for_ml", "visualize"):
+                    self.handle_action(state, res)
+            
             yield {"type": "final", "res": res}
             
         except Exception as e:

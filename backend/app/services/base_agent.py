@@ -80,6 +80,11 @@ class BaseAgentService(ABC):
         stats = self._get_stats(state.work_id)
         persona = PERSONAS.get(state.persona, PERSONAS["Scientist"])
         
+        # Dataset Context Enhancement
+        context_description = ""
+        if state.dataset_description:
+            context_description = f"\nUSER PROVIDED DATASET DESCRIPTION/GOAL:\n{state.dataset_description}\n"
+
         history = ""
         if state.chat_history:
             for msg in state.chat_history[-4:]:
@@ -93,15 +98,17 @@ class BaseAgentService(ABC):
 DATASET CONTEXT:
 {stats}
 SCHEMA SAMPLE: {json.dumps(sample, default=str)}
-
+{context_description}
 INSTRUCTIONS:
 You are a professional data engine. Solve the request below.
 - Keep output CONCISE. Do not include boilerplate or extra analysis unless asked.
-- CODE STYLE: Use "Minimum Viable Code". Avoid custom helper functions unless absolutely necessary.
-- If you need to transform data, use "action": "code".
+- CODE STYLE: Use "Minimum Viable Code".
+- **CRITICAL**: The dataframe is already loaded and available as a variable named `df`.
+- **STRICTLY FORBIDDEN**: Do NOT use `pd.read_csv`, `pd.read_json`, or any I/O functions. Work directly on the existing `df`.
+- **TRANSFORMATIONS**: For feature engineering (creating columns, scaling, etc.), use "action": "code".
 - If you need to visualize, use "action": "visualize".
 - FOR OUTPUT: You MUST return a JSON block at the VERY END.
-- DO NOT repeat the reasoning twice.
+- Include 3-4 "suggested_next_steps" (as strings) relevant to the data and goal.
 
 USER REQUEST: {state.user_message}
 {history}
@@ -111,8 +118,9 @@ RESPONSE FORMAT (JSON):
     "action": "answer|code|visualize|auto_clean",
     "content": "Result content or python script",
     "explanation": "Brief human summary",
+    "suggested_next_steps": ["step 1", "step 2", "step 3"],
     "title": "Viz Title",
-    "type": "bar|line|scatter|pie|area|table",
+    "type": "bar|line|scatter|pie|area|table|distribution|histogram",
     "xAxisKey": "col_name",
     "yAxisKey": "col_name"
 }}
@@ -146,7 +154,7 @@ RESPONSE FORMAT (JSON):
         state.next_node = "human_input"
         return state
 
-    def upload(self, state: AgentState, file_content: bytes, filename: str = "data.csv") -> AgentState:
+    def upload(self, state: AgentState, file_content: bytes, filename: str = "data.csv", description: str = "") -> AgentState:
         try:
             if filename.endswith(('.xlsx', '.xls')):
                 df = pd.read_excel(io.BytesIO(file_content))
@@ -155,6 +163,7 @@ RESPONSE FORMAT (JSON):
                 except UnicodeDecodeError: df = pd.read_csv(io.BytesIO(file_content), encoding='latin1')
             state.raw_id = store.write_df(df)
             state.work_id = state.raw_id
+            state.dataset_description = description
             state.user_message = f"Loaded {len(df):,} rows × {len(df.columns)} columns"
             state.next_node = "human_input"
             return state
