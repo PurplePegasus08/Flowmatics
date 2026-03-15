@@ -1,10 +1,11 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { DashboardItem, DataRow, AggregationType, SortOrder, LegendPosition } from '../types';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Label, Legend, ScatterChart, Scatter, ZAxis, Tooltip, LabelList, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Treemap, ComposedChart, Rectangle } from 'recharts';
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Label, Legend, ScatterChart, Scatter, ZAxis, Tooltip, LabelList, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Treemap, ComposedChart, Funnel, FunnelChart, Rectangle } from 'recharts';
 import { Trash2, Download, Lock, Unlock, Grid3X3, RotateCcw, Settings2, X, Type, Gauge, Hash, SlidersHorizontal, GripVertical, LayoutTemplate, Activity, Maximize2, Minimize2, LayoutGrid, Sparkles, Image as ImageIcon, FileCode, Share2, Palette } from 'lucide-react';
 import { CHART_THEMES } from './Visualization';
 import { processChartData } from '../utils/chartUtils';
 import { InsightCard } from '../components/InsightCard';
+import { MetricCard } from '../components/MetricCard';
 
 interface DashboardProps {
   data: DataRow[];
@@ -32,7 +33,7 @@ const CustomTooltip = ({ active, payload, label, isDarkMode }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className={`p-4 rounded-2xl shadow-2xl border-none backdrop-blur-xl animate-slide-up ${isDarkMode ? 'bg-surface-900/90 text-white' : 'bg-white/90 text-surface-900'}`}>
-        <p className="text-[10px] font-black uppercase tracking-widest mb-2 opacity-50">{label}</p>
+        <p className="text-[10px] font-black upperca   tracking-widest mb-2 opacity-50">{label}</p>
         <div className="space-y-1.5">
           {payload.map((entry: any, index: number) => (
             <div key={index} className="flex items-center gap-3">
@@ -98,8 +99,8 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
         <BarChart data={chartData} margin={margin}>
           <defs>
             <linearGradient id={`barGradient-${item.id}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={item.color || colors[0]} stopOpacity={1} />
-              <stop offset="100%" stopColor={item.color || colors[0]} stopOpacity={0.6} />
+              <stop offset="0%" stopColor={colors[0]} stopOpacity={1} />
+              <stop offset="100%" stopColor={colors[0]} stopOpacity={0.6} />
             </linearGradient>
           </defs>
           {chartAxes}
@@ -122,11 +123,11 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
         <LineChart data={chartData} margin={margin}>
           {chartAxes}
           {hasYAxis ? item.yAxisKeys.map((key, i) => (
-            <Line key={key} type={lineType} dataKey={key} stroke={item.color || colors[i % colors.length]} dot={item.showLabels} strokeWidth={3} strokeLinecap="round">
+            <Line key={key} type={lineType} dataKey={key} stroke={colors[i % colors.length]} dot={item.showLabels} strokeWidth={3} strokeLinecap="round">
               {item.showLabels && <LabelList dataKey={key} {...dataLabelProps} />}
             </Line>
           )) : (
-            <Line type={lineType} dataKey="value" stroke={item.color || colors[0]} dot={item.showLabels} strokeWidth={3} strokeLinecap="round">
+            <Line type={lineType} dataKey="value" stroke={colors[0]} dot={item.showLabels} strokeWidth={3} strokeLinecap="round">
               {item.showLabels && <LabelList dataKey="value" {...dataLabelProps} />}
             </Line>
           )}
@@ -155,7 +156,7 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
             } : false}
           >
             {chartData.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={index === 0 && item.color ? item.color : colors[index % colors.length]} />
+              <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
             ))}
           </Pie>
           <Tooltip content={<CustomTooltip isDarkMode={isDarkMode} />} />
@@ -176,11 +177,11 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
           </defs>
           {chartAxes}
           {hasYAxis ? item.yAxisKeys.map((key, i) => (
-            <Area key={key} type={lineType} stackId={item.stacked ? "stack" : undefined} dataKey={key} stroke={item.color || colors[i % colors.length]} fill={`url(#areaGradient-${item.id})`} strokeWidth={3} strokeLinecap="round">
+            <Area key={key} type={lineType} stackId={item.stacked ? "stack" : undefined} dataKey={key} stroke={colors[i % colors.length]} fill={`url(#areaGradient-${item.id})`} strokeWidth={3} strokeLinecap="round">
               {item.showLabels && <LabelList dataKey={key} {...dataLabelProps} />}
             </Area>
           )) : (
-            <Area type={lineType} dataKey="value" stroke={item.color || colors[0]} fill={`url(#areaGradient-${item.id})`} strokeWidth={3} strokeLinecap="round">
+            <Area type={lineType} dataKey="value" stroke={colors[0]} fill={`url(#areaGradient-${item.id})`} strokeWidth={3} strokeLinecap="round">
               {item.showLabels && <LabelList dataKey="value" {...dataLabelProps} />}
             </Area>
           )}
@@ -251,7 +252,53 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
       </ResponsiveContainer>
     );
   }
-  return null;
+  if (item.type === 'scatter' || item.type === 'bubble') {
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <ScatterChart margin={margin}>
+          {chartAxes}
+          <Scatter data={chartData} fill={colors[0]}>
+            {chartData.map((_: any, index: number) => (
+              <Cell key={`cell-${index}`} fill={colors[index % colors.length]} fillOpacity={0.75} />
+            ))}
+          </Scatter>
+        </ScatterChart>
+      </ResponsiveContainer>
+    );
+  }
+  if (item.type === 'funnel') {
+    const funnelData = chartData.map((d: any, i: number) => ({ ...d, fill: colors[i % colors.length] }));
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <FunnelChart>
+          <Funnel dataKey="value" data={funnelData} isAnimationActive>
+            {funnelData.map((entry: any, i: number) => (
+              <Cell key={i} fill={entry.fill} />
+            ))}
+          </Funnel>
+          <Tooltip content={<CustomTooltip isDarkMode={isDarkMode} />} />
+        </FunnelChart>
+      </ResponsiveContainer>
+    );
+  }
+  // Fallback — generic bar chart so nothing goes blank
+  if (chartData.length > 0) {
+    const fallbackKey = Object.keys(chartData[0]).find(k => k !== 'name') || 'value';
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={chartData} margin={margin}>
+          {chartAxes}
+          <Bar dataKey={fallbackKey} fill={colors[0]} radius={[6, 6, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center opacity-30">
+      <div className="text-4xl mb-2">📊</div>
+      <p className="text-[10px] font-bold uppercase tracking-widest">No data available</p>
+    </div>
+  );
 });
 
 export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode, items, onUpdateItem, onRemoveItem, onNavigateToData, onAutoGenerate, onUndo, sessionId, onAskAboutChart }) => {
@@ -292,25 +339,121 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode,
   };
 
   const handleExportHTML = () => {
-    const dashboardHtml = document.getElementById('dashboard-grid')?.innerHTML;
-    if (!dashboardHtml) return;
+    if (items.length === 0) return;
 
-    const fullHtml = `
-<!DOCTYPE html>
-<html>
+    const now = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const bg = isDarkMode ? '#0f172a' : '#f8fafc';
+    const cardBg = isDarkMode ? '#1e293b' : '#ffffff';
+    const textColor = isDarkMode ? '#f1f5f9' : '#0f172a';
+    const subtleText = isDarkMode ? '#64748b' : '#94a3b8';
+    const borderColor = isDarkMode ? '#334155' : '#e2e8f0';
+
+    const chartRows = items.map(item => {
+      const chartData = processChartData(data, item);
+      const isMetric = item.type === 'metric';
+
+      if (isMetric) {
+        const value = chartData[0]?.value ?? 0;
+        return `
+<div class="metric-card">
+  <div class="metric-label">${item.title}</div>
+  <div class="metric-value">${typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : value}</div>
+</div>`;
+      }
+
+      const tableRows = chartData.slice(0, 10).map((row: any) => {
+        const cells = Object.entries(row)
+          .filter(([k]) => !k.startsWith('_'))
+          .map(([k, v]) => `<td class="td">${typeof v === 'number' ? Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(v)}</td>`)
+          .join('');
+        return `<tr>${cells}</tr>`;
+      }).join('');
+
+      const headers = Object.keys(chartData[0] || {})
+        .filter(k => !k.startsWith('_'))
+        .map(k => `<th class="th">${k}</th>`).join('');
+
+      return `
+<div class="chart-block">
+  <div class="chart-title">${item.title}</div>
+  <div class="chart-type-pill">${item.type.toUpperCase()}</div>
+  <table class="data-table">
+    <thead><tr>${headers}</tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+  ${chartData.length > 10 ? `<p class="more-note">Showing top 10 of ${chartData.length} records</p>` : ''}
+</div>`;
+    }).join('');
+
+    const metricCards = items.filter(i => i.type === 'metric');
+    const otherCharts = items.filter(i => i.type !== 'metric');
+
+    const metricSection = metricCards.length > 0 ? `
+<div class="metrics-row">
+  ${metricCards.map(item => {
+      const chartData = processChartData(data, item);
+      const value = chartData[0]?.value ?? 0;
+      return `<div class="metric-card"><div class="metric-label">${item.title}</div><div class="metric-value">${typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : value}</div></div>`;
+    }).join('')}
+</div>` : '';
+
+    const chartSection = otherCharts.map(item => {
+      const chartData = processChartData(data, item);
+      const tableRows = chartData.slice(0, 15).map((row: any) => {
+        const cells = Object.entries(row)
+          .filter(([k]) => !k.startsWith('_'))
+          .map(([k, v]) => `<td class="td">${typeof v === 'number' ? Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(v)}</td>`)
+          .join('');
+        return `<tr>${cells}</tr>`;
+      }).join('');
+      const headers = Object.keys(chartData[0] || {}).filter(k => !k.startsWith('_')).map(k => `<th class="th">${k}</th>`).join('');
+      return `
+<div class="chart-block">
+  <div class="chart-header"><span class="chart-title">${item.title}</span><span class="chart-badge">${item.type}</span></div>
+  <table class="data-table"><thead><tr>${headers}</tr></thead><tbody>${tableRows}</tbody></table>
+  ${chartData.length > 15 ? `<div class="more-note">+ ${chartData.length - 15} more rows</div>` : ''}
+</div>`;
+    }).join('');
+
+    const fullHtml = `<!DOCTYPE html>
+<html lang="en">
 <head>
-  <title>Flowmatics Report</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    body { background: ${isDarkMode ? '#020617' : '#f8fafc'}; color: ${isDarkMode ? '#fff' : '#000'}; font-family: sans-serif; padding: 40px; }
-    .grid-stack { position: relative; }
-    .grid-stack-item { background: ${isDarkMode ? 'rgba(15,23,42,0.6)' : '#fff'}; border-radius: 24px; padding: 20px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flowmatics Report — ${now}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: ${bg}; color: ${textColor}; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; padding: 48px; }
+  .page-header { border-bottom: 2px solid ${borderColor}; padding-bottom: 24px; margin-bottom: 40px; }
+  .page-title { font-size: 28px; font-weight: 900; letter-spacing: -0.03em; }
+  .page-subtitle { font-size: 12px; color: ${subtleText}; margin-top: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; }
+  .metrics-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 40px; }
+  .metric-card { background: ${cardBg}; border: 1px solid ${borderColor}; border-radius: 16px; padding: 24px; }
+  .metric-label { font-size: 11px; font-weight: 700; color: ${subtleText}; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px; }
+  .metric-value { font-size: 32px; font-weight: 900; color: ${textColor}; }
+  .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 24px; }
+  .chart-block { background: ${cardBg}; border: 1px solid ${borderColor}; border-radius: 16px; padding: 28px; break-inside: avoid; }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .chart-title { font-size: 14px; font-weight: 800; color: ${textColor}; }
+  .chart-badge { font-size: 9px; font-weight: 900; color: ${subtleText}; text-transform: uppercase; letter-spacing: 0.15em; background: ${bg}; border: 1px solid ${borderColor}; border-radius: 6px; padding: 3px 8px; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .th { padding: 9px 12px; text-align: left; font-size: 10px; font-weight: 700; color: ${subtleText}; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid ${borderColor}; }
+  .td { padding: 9px 12px; border-bottom: 1px solid ${borderColor}; color: ${textColor}; }
+  tbody tr:last-child .td { border-bottom: none; }
+  tbody tr:hover td { background: ${isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'}; }
+  .more-note { font-size: 10px; color: ${subtleText}; margin-top: 12px; font-weight: 600; }
+  .footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid ${borderColor}; font-size: 11px; color: ${subtleText}; font-weight: 600; }
+  @media print { body { padding: 20px; } .charts-grid { grid-template-columns: 1fr; } }
+</style>
 </head>
 <body>
-  <h1 style="font-size: 2rem; font-weight: 800; margin-bottom: 40px; text-transform: uppercase; letter-spacing: 0.2em;">Flowmatics Intelligence Report</h1>
-  <div class="grid-stack">${dashboardHtml}</div>
-  <p style="margin-top: 40px; font-size: 10px; opacity: 0.5;">Generated by Flowmatics AI</p>
+  <div class="page-header">
+    <div class="page-title">Analytics Report</div>
+    <div class="page-subtitle">Generated by Flowmatics · ${now} · ${items.length} insights</div>
+  </div>
+  ${metricSection}
+  <div class="charts-grid">${chartSection}</div>
+  <div class="footer">Flowmatics Intelligence Report — All data is derived from your uploaded dataset.</div>
 </body>
 </html>`;
 
@@ -329,24 +472,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode,
   const handleAutoLayout = useCallback(() => {
     if (items.length === 0) return;
 
-    const containerWidth = canvasRef.current?.offsetWidth || 1200;
-    const margin = 40;
-    const padding = 20;
-    const itemWidth = Math.min(500, (containerWidth - (margin * 2) - padding) / 2);
-    const itemHeight = 400;
+    const containerWidth = canvasRef.current?.clientWidth || 1200;
+    const MARGIN = 20;
+    const GAP = 16;
+    const COLS = 2;
+    const CARD_H = 140;
+    const CHART_H = 340;
+    // Snap everything to GRID_SIZE
+    const snap = (v: number) => Math.round(v / GRID_SIZE) * GRID_SIZE;
 
-    items.forEach((item, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
+    // Separate metric KPI cards from regular charts
+    const metrics = items.filter(i => i.type === 'metric');
+    const charts = items.filter(i => i.type !== 'metric');
 
-      const newX = margin + (col * (itemWidth + padding));
-      const newY = margin + (row * (itemHeight + padding));
+    // Available width for charts
+    const totalPadding = MARGIN * 2 + GAP * (COLS - 1);
+    const slotWidth = snap(Math.floor((containerWidth - totalPadding) / COLS));
 
+    // --- Row 0: Metric cards spread across top ---
+    const metricSlotW = metrics.length > 0
+      ? snap(Math.floor((containerWidth - MARGIN * 2 - GAP * (metrics.length - 1)) / metrics.length))
+      : 0;
+
+    metrics.forEach((item, i) => {
       onUpdateItem(item.id, {
-        x: Math.round(newX / GRID_SIZE) * GRID_SIZE,
-        y: Math.round(newY / GRID_SIZE) * GRID_SIZE,
-        width: Math.round(itemWidth / GRID_SIZE) * GRID_SIZE,
-        height: Math.round(itemHeight / GRID_SIZE) * GRID_SIZE
+        x: snap(MARGIN + i * (metricSlotW + GAP)),
+        y: snap(MARGIN),
+        width: metricSlotW,
+        height: snap(CARD_H),
+      });
+    });
+
+    const chartsStartY = metrics.length > 0 ? snap(MARGIN + CARD_H + GAP) : snap(MARGIN);
+
+    // --- Rows 1+: Regular charts in 2-column grid ---
+    charts.forEach((item, i) => {
+      const col = i % COLS;
+      const row = Math.floor(i / COLS);
+      onUpdateItem(item.id, {
+        x: snap(MARGIN + col * (slotWidth + GAP)),
+        y: chartsStartY + snap(row * (CHART_H + GAP)),
+        width: slotWidth,
+        height: snap(CHART_H),
       });
     });
   }, [items, onUpdateItem]);
@@ -464,7 +631,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode,
         </div>
       </header>
 
-      <div ref={canvasRef} className={`flex-1 overflow-auto relative bg-surface-50 dark:bg-surface-900/50 ${showGrid ? 'canvas-grid' : ''}`} style={{ backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px` }}>
+      <div ref={canvasRef} id="dashboard-grid" className={`flex-1 overflow-auto relative bg-surface-50 dark:bg-surface-900/50 ${showGrid ? 'canvas-grid' : ''}`} style={{ backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px` }}>
 
         {items.map(item => {
           const isDragging = draggingId === item.id;
@@ -515,7 +682,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode,
                 >
                   <Sparkles className="w-4 h-4" />
                 </button>
-                <DashboardChart item={item} data={data} isDarkMode={isDarkMode} />
+                {item.type === 'metric' ? (
+                  <MetricCard
+                    title={item.title}
+                    value={(processChartData(data, item)[0])?.value?.toLocaleString() ?? '0'}
+                    isDarkMode={isDarkMode}
+                    growth={item.growth}
+                    subValue={item.subValue}
+                    subLabel={item.subLabel}
+                  />
+                ) : (
+                  <DashboardChart item={item} data={data} isDarkMode={isDarkMode} />
+                )}
 
                 {isEditing && (
                   <div className="absolute inset-0 z-50 bg-white/98 dark:bg-surface-800/98 backdrop-blur-sm p-7 overflow-y-auto animate-slide-up custom-scrollbar text-xs">

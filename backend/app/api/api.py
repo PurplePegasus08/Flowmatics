@@ -5,6 +5,7 @@ Refactored to use modular services.
 import uuid
 import io
 import json
+import asyncio
 import numpy as np
 from typing import Dict, List
 from contextlib import asynccontextmanager
@@ -267,6 +268,9 @@ async def chat_stream(req: ChatRequest):
         async for chunk_data in service.stream_execute(state):
             # Format as SSE
             yield f"data: {json.dumps(chunk_data)}\n\n"
+            # Introduce slight pacing for natural feel
+            if chunk_data.get("type") == "chunk":
+                await asyncio.sleep(0.02)
         
         # PERSIST STATE after stream finishes (in case actions updated state.work_id)
         session_service.save_session(req.sessionId, state)

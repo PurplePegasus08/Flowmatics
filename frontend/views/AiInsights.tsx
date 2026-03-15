@@ -445,11 +445,11 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                     setMessages(prev => prev.map(m =>
                         m.id === modelMsgId ? { ...m, content: (args.explanation || (args.type === 'table' ? `I've analyzed the raw data for "${args.xAxisKey}".` : `I've rendered the "${args.title}" chart for you.`)) } : m
                     ));
-                } else if (args.action === 'auto_clean' || args.action === 'prepare_for_ml') {
+                } else if (args.action === 'auto_clean' || args.action === 'prepare_for_ml' || args.action === 'transform') {
                     // Trigger refresh for data-modifying actions
                     setTimeout(() => loadSession(sessionId), 500);
                     setMessages(prev => prev.map(m =>
-                        m.id === modelMsgId ? { ...m, content: (args.explanation || (args.action === 'auto_clean' ? "✅ Smart Auto-Clean complete!" : "✅ ML Preparation complete!")) } : m
+                        m.id === modelMsgId ? { ...m, content: (args.explanation || (args.action === 'auto_clean' ? "✅ Smart Auto-Clean complete!" : args.action === 'prepare_for_ml' ? "✅ ML Preparation complete!" : "✅ Transformation applied!")) } : m
                     ));
                 } else {
                     // Final fallback for simple text answers
@@ -549,7 +549,7 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                             ))}
                         </div>
                     )}
-                    {messages.map((msg) => {
+                    {messages.map((msg, index) => {
                         const isPython = msg.content.startsWith('PYTHON_CODE_BLOCK:');
                         let pythonData = null;
                         if (isPython) { try { pythonData = JSON.parse(msg.content.replace('PYTHON_CODE_BLOCK:', '')); } catch (e) { } }
@@ -598,7 +598,7 @@ export const AiInsights: React.FC<AiInsightsProps> = ({
                                                     }
                                                 }}
                                             >
-                                                {msg.content}
+                                                {msg.content + (loading && msg.role === 'model' && index === messages.length - 1 ? ' ▍' : '')}
                                             </ReactMarkdown>
                                         )}
                                     </div>

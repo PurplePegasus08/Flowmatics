@@ -25,7 +25,7 @@ export interface ColumnStats {
   totalRows: number;
 }
 
-export type ChartType = 'bar' | 'line' | 'scatter' | 'pie' | 'area' | 'heatmap' | 'doughnut' | 'bubble' | 'box' | 'venn' | 'contour' | 'table' | 'radar' | 'treemap' | 'heatmap_matrix' | 'step_line' | 'funnel' | 'distribution' | 'histogram';
+export type ChartType = 'bar' | 'line' | 'scatter' | 'pie' | 'area' | 'heatmap' | 'doughnut' | 'bubble' | 'box' | 'venn' | 'contour' | 'table' | 'radar' | 'treemap' | 'heatmap_matrix' | 'step_line' | 'funnel' | 'distribution' | 'histogram' | 'candlestick' | 'metric';
 export type ThemeType = 'default' | 'neon' | 'pastel' | 'dark' | 'professional';
 export type AggregationType = 'sum' | 'avg' | 'min' | 'max' | 'count';
 export type SortOrder = 'none' | 'asc' | 'desc';
@@ -77,8 +77,14 @@ export interface DashboardItem extends ChartConfig {
   y: number;
   width: number;
   height: number;
+  colSpan?: number; // 1-12 columns (Legacy/Grid fallback)
+  rowSpan?: number; // Optional height in units (Legacy/Grid fallback)
+  order?: number; // For masonry/grid sequence (Legacy/Grid fallback)
   isLocked?: boolean;
   zIndex?: number;
+  growth?: number;
+  subValue?: string | number;
+  subLabel?: string;
 }
 
 export interface ChatMessage {

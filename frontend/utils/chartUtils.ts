@@ -51,6 +51,13 @@ export const processChartData = (data: DataRow[], config: ChartConfig) => {
     return result.slice(0, 500);
   }
 
+  // 7. METRIC (Single Value Logic)
+  if (config.type === 'metric') {
+    const yKey = config.yAxisKeys?.[0] || config.xAxisKey; // Fallback to xAxisKey if yAxisKeys[0] is not provided
+    const total = filteredSource.reduce((acc, row) => acc + (Number(row[yKey]) || 0), 0);
+    return [{ name: config.title, value: total }];
+  }
+
   // 2. VENN DIAGRAM (Set Overlap)
   if (config.type === 'venn') {
     const setAKey = config.xAxisKey;
@@ -96,13 +103,97 @@ export const processChartData = (data: DataRow[], config: ChartConfig) => {
 
     return Object.entries(groupedValues).map(([name, values]) => {
       if (values.length === 0) return null;
+      const sorted = [...values].sort((a, b) => a - b);
       const min = Math.min(...values);
       const max = Math.max(...values);
-      const q1 = getQuantile(values, 0.25);
-      const median = getQuantile(values, 0.5);
-      const q3 = getQuantile(values, 0.75);
-      return { name, min, q1, median, q3, max };
+      const q1 = getQuantile(sorted, 0.25);
+      const median = getQuantile(sorted, 0.5);
+      const q3 = getQuantile(sorted, 0.75);
+
+      // Calculate whiskers (1.5 * IQR)
+      const iqr = q3 - q1;
+      const lowWhisker = Math.max(min, q1 - 1.5 * iqr);
+      const highWhisker = Math.min(max, q3 + 1.5 * iqr);
+
+      return {
+        name,
+        min, q1, median, q3, max,
+        lowWhisker, highWhisker,
+        outliers: values.filter(v => v < lowWhisker || v > highWhisker)
+      };
     }).filter(Boolean);
+  }
+
+  // 4. FUNNEL CHART (Sequential Stages)
+  if (config.type === 'funnel') {
+    const xKey = config.xAxisKey;
+    const yKey = config.yAxisKeys?.[0];
+    const aggMap = new Map<string, number>();
+
+    filteredSource.forEach(row => {
+      const stage = String(row[xKey]);
+      const val = yKey ? Number(row[yKey]) : 1;
+      if (!isNaN(val)) aggMap.set(stage, (aggMap.get(stage) || 0) + val);
+    });
+
+    return Array.from(aggMap.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value); // Funnels are always descending
+  }
+
+  // 5. SCATTER & BUBBLE (Raw Data Processing)
+  if (config.type === 'scatter' || config.type === 'bubble') {
+    const xKey = config.xAxisKey;
+    const yKey = config.yAxisKeys?.[0];
+    const zKey = config.zAxisKey;
+
+    if (!yKey) return [];
+
+    return filteredSource.map(row => {
+      const xVal = Number(row[xKey]);
+      const yVal = Number(row[yKey]);
+      const zVal = zKey ? Number(row[zKey]) : 10;
+
+      if (isNaN(xVal) || isNaN(yVal)) return null;
+
+      return {
+        x: xVal,
+        y: yVal,
+        z: isNaN(zVal) ? 10 : zVal,
+        _xLabel: String(row[xKey]),
+        _yLabel: String(row[yKey]),
+        _name: String(row[xKey])
+      };
+    }).filter(Boolean).slice(0, 500);
+  }
+
+  // 6. CANDLESTICK (Financial Data: Open, High, Low, Close)
+  if (config.type === 'candlestick') {
+    const xKey = config.xAxisKey;
+    const yKeys = config.yAxisKeys || [];
+    if (yKeys.length < 4) return []; // Needs O, H, L, C
+
+    const groupedData: Record<string, any> = {};
+    filteredSource.forEach(row => {
+      const time = String(row[xKey]);
+      if (!groupedData[time]) {
+        groupedData[time] = { name: time, open: 0, high: -Infinity, low: Infinity, close: 0, _count: 0 };
+      }
+      const entry = groupedData[time];
+      const [o, h, l, c] = yKeys.map(k => Number(row[k]));
+
+      if (!isNaN(o) && !isNaN(h) && !isNaN(l) && !isNaN(c)) {
+        if (entry._count === 0) entry.open = o;
+        entry.high = Math.max(entry.high, h);
+        entry.low = Math.min(entry.low, l);
+        entry.close = c; // Last one in group is current close
+        entry._count++;
+      }
+    });
+
+    return Object.values(groupedData)
+      .filter(d => d._count > 0)
+      .map(d => ({ ...d, isUp: d.close >= d.open }));
   }
 
   // 4. DISTRIBUTION / HISTOGRAM (Binned Frequency)

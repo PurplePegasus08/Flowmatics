@@ -53,7 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const navItems = [
-    { id: AppView.DASHBOARD, label: 'Workbench', icon: LayoutDashboard },
+    { id: AppView.DASHBOARD, label: 'Dashboard', icon: LayoutDashboard },
     { id: AppView.DATA, label: 'Data Hub', icon: Database },
     { id: AppView.VISUALIZE, label: 'Studio', icon: BarChart2 },
     { id: AppView.INSIGHTS, label: 'Copilot', icon: BrainCircuit },

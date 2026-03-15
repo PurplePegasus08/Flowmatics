@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, AreaChart, Area, Label, ScatterChart, Scatter, ZAxis, Tooltip, LabelList, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Treemap, ComposedChart, Rectangle
+  PieChart, Pie, Cell, AreaChart, Area, Label, ScatterChart, Scatter, ZAxis, Tooltip, LabelList, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Treemap, ComposedChart, Rectangle, FunnelChart, Funnel, Trapezoid
 } from 'recharts';
 import {
   Download, Plus, ChevronDown, Check, Activity, Palette, Zap, Sparkles,
@@ -22,12 +22,14 @@ interface VisualizationProps {
   setActiveFilters: (filters: Record<string, any[]>) => void;
 }
 
-export const CHART_THEMES: Record<ThemeType, string[]> = {
-  default: ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6'],
-  neon: ['#00f2ff', '#7000ff', '#ff007a', '#00ff41', '#fbff00'],
-  pastel: ['#ffd1dc', '#b19cd9', '#aec6cf', '#ffb347', '#77dd77'],
+export const CHART_THEMES = {
+  default: ['#0d9488', '#0284c7', '#e11d48', '#d97706', '#4f46e5'], // Mixed SaaS
+  corporate: ['#1e293b', '#334155', '#475569', '#64748b', '#94a3b8'], // Navy/Slate
+  saas: ['#0891b2', '#06b6d4', '#22d3ee', '#67e8f9', '#a5f3fc'], // Cyan
+  neon: ['#6366f1', '#8b5cf6', '#d946ef', '#ec4899', '#f43f5e'],
+  pastel: ['#93c5fd', '#a5f3fc', '#c7d2fe', '#ddd6fe', '#fbcfe8'],
   dark: ['#1e293b', '#334155', '#475569', '#64748b', '#94a3b8'],
-  professional: ['#0f172a', '#3b82f6', '#10b981', '#f59e0b', '#ef4444']
+  professional: ['#0f766e', '#1e293b', '#0891b2', '#0d9488', '#334155']
 };
 
 export const Visualization: React.FC<VisualizationProps> = ({
@@ -92,27 +94,51 @@ export const Visualization: React.FC<VisualizationProps> = ({
   };
 
   const renderChart = () => {
-    <div className="h-full flex flex-col items-center justify-center text-surface-400 bg-surface-50/30 dark:bg-surface-900/40 rounded-[4rem] border border-dashed border-surface-200 dark:border-surface-800 transition-all p-12">
-      <div className="w-24 h-24 bg-white dark:bg-surface-800 rounded-[2.5rem] shadow-soft flex items-center justify-center mb-10 border border-surface-100 dark:border-surface-700 animate-pulse">
-        <Sparkles className="w-10 h-10 text-indigo-500" />
-      </div>
-      <h3 className="text-sm font-black uppercase tracking-[0.4em] text-surface-900 dark:text-white mb-4">Initialize Synaptic Core</h3>
-      <p className="text-[11px] text-surface-400 dark:text-surface-500 font-bold tracking-widest uppercase text-center max-w-sm leading-relaxed">
-        Select an X-Axis dimension in the Architect panel to begin projection
-      </p>
-    </div>
+    if (!config.xAxisKey) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 dark:bg-slate-900/40 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 transition-all p-12">
+          <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl shadow-sm flex items-center justify-center mb-6 border border-slate-100 dark:border-slate-700">
+            <Sparkles className="w-8 h-8 text-teal-500" />
+          </div>
+          <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-800 dark:text-white mb-2">Awaiting Architecture</h3>
+          <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase text-center max-w-[200px] leading-relaxed">
+            Select an X-Axis dimension to project data
+          </p>
+        </div>
+      );
+    }
 
     const hasY = config.yAxisKeys && config.yAxisKeys.length > 0;
-    const common = { margin: { top: 40, right: 40, left: 20, bottom: 40 }, data: chartData };
+    const chartData = processChartData(data, config);
 
-    const axisColor = isDarkMode ? '#475569' : '#94a3b8';
-    const tickStyle = { fontSize: 10, fill: axisColor, fontWeight: 600, fontFamily: 'JetBrains Mono' };
+    // Common chart configuration
+    const common = {
+      margin: { top: 10, right: 10, left: -20, bottom: 0 },
+      data: chartData
+    };
+
+    const tickStyle = {
+      fill: isDarkMode ? '#94a3b8' : '#64748b',
+      fontSize: 10,
+      fontWeight: 600,
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.05em'
+    };
+
+    const tooltipStyle = {
+      backgroundColor: isDarkMode ? '#1e293b' : '#ffffff',
+      border: `1px solid ${isDarkMode ? '#334155' : '#e2e8f0'}`,
+      borderRadius: '8px',
+      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+      padding: '12px'
+    };
+
     const labelStyle = {
       fill: isDarkMode ? '#64748b' : '#cbd5e1',
       fontSize: 9,
       fontWeight: 800,
       textTransform: 'uppercase' as const,
-      letterSpacing: '0.2em'
+      letterSpacing: '0.1em'
     };
 
     const dataLabelProps = config.showLabels ? {
@@ -285,10 +311,28 @@ export const Visualization: React.FC<VisualizationProps> = ({
       );
       case 'box': return (
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart {...common}>
+          <ComposedChart {...common}>
             {chartUI}
-            <Bar dataKey="median" fill={themeColors[0]} radius={[4, 4, 0, 0]} barSize={40}>
-              {config.showLabels && <LabelList dataKey="median" {...dataLabelProps} />}
+            {chartData.map((d: any, i: number) => (
+              <React.Fragment key={i}>
+                {/* Whisker Line */}
+                <Line
+                  data={[{ name: d.name, val: d.lowWhisker }, { name: d.name, val: d.highWhisker }]}
+                  dataKey="val"
+                  stroke={themeColors[0]}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={false}
+                />
+                {/* Top/Bottom Whisker Caps */}
+                <Line data={[{ name: d.name, val: d.lowWhisker }]} dataKey="val" dot={{ r: 6, fill: themeColors[0], strokeWidth: 0 }} />
+                <Line data={[{ name: d.name, val: d.highWhisker }]} dataKey="val" dot={{ r: 6, fill: themeColors[0], strokeWidth: 0 }} />
+              </React.Fragment>
+            ))}
+            <Bar dataKey="q3" fill={themeColors[0]} opacity={0.3} barSize={40} stackId="box" />
+            <Bar dataKey="q1" fill="transparent" barSize={40} stackId="box" />
+            <Bar dataKey="median" fill={themeColors[0]} barSize={40} radius={0}>
+              <LabelList dataKey="median" {...dataLabelProps} />
             </Bar>
             <Tooltip
               content={({ active, payload }) => {
@@ -298,8 +342,8 @@ export const Visualization: React.FC<VisualizationProps> = ({
                     <div className="bg-white dark:bg-surface-800 p-4 rounded-2xl shadow-xl border border-surface-100 dark:border-surface-700">
                       <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-3">{data.name}</p>
                       <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-                        <div><p className="text-[9px] text-surface-400 font-bold uppercase">Max</p><p className="text-xs font-mono font-black">{data.max}</p></div>
-                        <div><p className="text-[9px] text-surface-400 font-bold uppercase">Min</p><p className="text-xs font-mono font-black">{data.min}</p></div>
+                        <div><p className="text-[9px] text-surface-400 font-bold uppercase">Max / High Whisker</p><p className="text-xs font-mono font-black">{data.max} / {data.highWhisker?.toFixed(2)}</p></div>
+                        <div><p className="text-[9px] text-surface-400 font-bold uppercase">Min / Low Whisker</p><p className="text-xs font-mono font-black">{data.min} / {data.lowWhisker?.toFixed(2)}</p></div>
                         <div><p className="text-[9px] text-surface-400 font-bold uppercase">Median</p><p className="text-xs font-mono font-black text-indigo-600">{data.median}</p></div>
                         <div><p className="text-[9px] text-surface-400 font-bold uppercase">Q1 / Q3</p><p className="text-xs font-mono font-black">{data.q1} / {data.q3}</p></div>
                       </div>
@@ -309,7 +353,69 @@ export const Visualization: React.FC<VisualizationProps> = ({
                 return null;
               }}
             />
-          </BarChart>
+          </ComposedChart>
+        </ResponsiveContainer>
+      );
+      case 'funnel': return (
+        <ResponsiveContainer width="100%" height="100%">
+          <FunnelChart {...common}>
+            <Tooltip
+              contentStyle={{ backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}
+            />
+            <Funnel
+              dataKey="value"
+              data={chartData}
+              isAnimationActive
+            >
+              <LabelList position="right" fill={isDarkMode ? '#94a3b8' : '#475569'} stroke="none" dataKey="name" fontSize={10} fontWeight={700} />
+              {chartData.map((entry: any, index: number) => (
+                <Cell key={`cell-${index}`} fill={themeColors[index % themeColors.length]} opacity={0.8 - (index * 0.1)} />
+              ))}
+            </Funnel>
+          </FunnelChart>
+        </ResponsiveContainer>
+      );
+      case 'candlestick': return (
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart {...common}>
+            <CartesianGrid strokeDasharray="4 4" vertical={false} stroke={isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'} />
+            <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
+            <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+            <Tooltip
+              content={({ active, payload }) => {
+                if (active && payload && payload.length) {
+                  const data = payload[0].payload;
+                  return (
+                    <div className="bg-white dark:bg-surface-800 p-4 rounded-2xl shadow-xl border border-surface-100 dark:border-surface-700">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-surface-400 mb-3">{data.name}</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div><p className="text-[8px] font-black text-surface-400 uppercase">Open</p><p className="text-xs font-mono font-black">{data.open}</p></div>
+                        <div><p className="text-[8px] font-black text-surface-400 uppercase">Close</p><p className="text-xs font-mono font-black">{data.close}</p></div>
+                        <div><p className="text-[8px] font-black text-surface-400 uppercase">High</p><p className="text-xs font-mono font-black text-emerald-500">{data.high}</p></div>
+                        <div><p className="text-[8px] font-black text-surface-400 uppercase">Low</p><p className="text-xs font-mono font-black text-rose-500">{data.low}</p></div>
+                      </div>
+                      <div className={`mt-3 pt-2 border-t border-surface-100 dark:border-surface-700 text-[10px] font-black uppercase tracking-widest ${data.isUp ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {data.isUp ? 'Bullish Shift' : 'Bearish Shift'}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              }}
+            />
+            {/* Wicks */}
+            <Bar dataKey="high" fill="transparent" barSize={2}>
+              {chartData.map((d: any, i: number) => (
+                <Cell key={i} fill={d.isUp ? '#10b981' : '#f43f5e'} />
+              ))}
+            </Bar>
+            {/* Candle Body */}
+            <Bar dataKey={(d: any) => Math.abs(d.close - d.open)} fill="transparent" barSize={12}>
+              {chartData.map((d: any, i: number) => (
+                <Cell key={i} fill={d.isUp ? '#10b981' : '#f43f5e'} />
+              ))}
+            </Bar>
+          </ComposedChart>
         </ResponsiveContainer>
       );
       case 'pie':
@@ -330,9 +436,11 @@ export const Visualization: React.FC<VisualizationProps> = ({
               {chartData.map((_, i) => <Cell key={i} fill={themeColors[i % themeColors.length]} />)}
             </Pie>
             <Tooltip
-              contentStyle={{ backgroundColor: isDarkMode ? '#0f172a' : '#ffffff', borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}
+              contentStyle={tooltipStyle}
+              itemStyle={{ fontSize: 11, fontWeight: 700, color: isDarkMode ? '#f1f5f9' : '#1e293b' }}
+              labelStyle={{ fontSize: 10, fontWeight: 800, marginBottom: 4, textAnchor: 'start', color: '#94a3b8' }}
             />
-            <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', paddingBottom: '30px' }} />
+            <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', paddingBottom: '20px' }} />
           </PieChart>
         </ResponsiveContainer>
       );
@@ -394,6 +502,9 @@ export const Visualization: React.FC<VisualizationProps> = ({
                       { id: 'heatmap_matrix', icon: <Layout className="w-4 h-4" /> },
                       { id: 'radar', icon: <Shield className="w-4 h-4" /> },
                       { id: 'treemap', icon: <LayoutGrid className="w-4 h-4" /> },
+                      { id: 'box', icon: <Box className="w-4 h-4" /> },
+                      { id: 'funnel', icon: <Layers className="w-4 h-4" /> },
+                      { id: 'candlestick', icon: <Activity className="w-4 h-4" /> },
                     ].map(t => (
                       <button
                         key={t.id} onClick={() => { setConfig({ ...config, type: t.id as any }); setShowModelMenu(false); }}

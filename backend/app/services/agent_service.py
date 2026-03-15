@@ -97,6 +97,21 @@ class AgentService(BaseAgentService):
                 state.user_message = reasoning_md + f"✅ Smart Auto-Clean complete!\n\nI've automatically improved data quality based on statistical profiling.\n\n### Reasoning Log\n{report_md}\n\n### Data Changes\n{diff}"
                 state.error, state.retry_count = None, 0
                 state.next_node = "human_input"
+            elif action == "transform":
+                script = content
+                df = store.get_df(state.work_id)
+                self.push_undo(state, f"AI Transform: {script[:60]}...")
+                new_df, err, stdout = exec_code(script, df)
+                
+                if err:
+                    state.error = err
+                    state.user_message = reasoning_md + f"❌ Transform failed: {err}"
+                else:
+                    state.work_id = store.write_df(new_df)
+                    diff = compare_dataframes(df, new_df)
+                    state.user_message = reasoning_md + f"✅ Transformation applied successfully!\n\n### Data Changes\n{diff}" + (f"\n\n**Output:**\n```\n{stdout}\n```" if stdout else "")
+                
+                state.next_node = "human_input"
             elif action == "prepare_for_ml":
                 state.last_tool = {"name": "prepareForML", "args": {}}
                 df = store.get_df(state.work_id)
@@ -161,7 +176,7 @@ class AgentService(BaseAgentService):
                 state.suggested_next_steps = res.get("suggested_next_steps", [])
                 
                 # Execute action and update state/session
-                if res.get("action") in ("auto_clean", "prepare_for_ml", "visualize"):
+                if res.get("action") in ("auto_clean", "prepare_for_ml", "visualize", "transform"):
                     self.handle_action(state, res)
             
             yield {"type": "final", "res": res}

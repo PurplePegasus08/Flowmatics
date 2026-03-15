@@ -7,7 +7,7 @@ import {
   ListFilter, Trash2,
   Sparkles, BrainCircuit, Info,
   MoreVertical, Edit3, Trash, ArrowUpDown, ArrowUp, ArrowDown,
-  RotateCcw, RotateCw, Download, Plus, Calculator, Activity
+  RotateCcw, RotateCw, Download, Plus, Calculator, Activity, SlidersHorizontal
 } from 'lucide-react';
 import { DataRow } from '../types';
 import { InsightCard } from '../components/InsightCard';
@@ -23,6 +23,7 @@ interface DataStudioProps {
   onRemoveData: () => void;
   onUndo: () => void;
   sessionId: string;
+  isDarkMode: boolean;
   datasetDescription?: string;
   onUpdateDescription?: (desc: string) => void;
 }
@@ -67,9 +68,23 @@ const MiniHistogram: React.FC<{ data: any[], type: string }> = ({ data, type }) 
   );
 };
 
+const MetricCard = ({ title, value, icon: Icon, colorClass, isDarkMode }: { title: string, value: string | number, icon: any, colorClass: string, isDarkMode: boolean }) => (
+  <div className={`p-4 rounded-2xl border border-surface-200 dark:border-surface-700 bg-white/60 dark:bg-surface-800/60 backdrop-blur-md shadow-sm transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group flex-1 min-w-[200px]`}>
+    <div className="flex items-center gap-4">
+      <div className={`p-2.5 rounded-xl ${colorClass} bg-opacity-10 dark:bg-opacity-20 transition-colors`}>
+        <Icon className={`w-4 h-4 ${colorClass.replace('bg-', 'text-')}`} />
+      </div>
+      <div>
+        <p className="text-[10px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest mb-0.5">{title}</p>
+        <p className="text-lg font-black text-surface-900 dark:text-white tracking-tight leading-none tabular-nums">{value}</p>
+      </div>
+    </div>
+  </div>
+);
+
 export const DataStudio: React.FC<DataStudioProps> = ({
   data, headers, onFileUpload, onProcessData, activeFilters, setActiveFilters,
-  onRemoveData, onUndo, sessionId, datasetDescription = "", onUpdateDescription
+  onRemoveData, onUndo, sessionId, isDarkMode, datasetDescription = "", onUpdateDescription
 }) => {
   const [localDescription, setLocalDescription] = useState(datasetDescription);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
@@ -101,9 +116,23 @@ export const DataStudio: React.FC<DataStudioProps> = ({
   }, [datasetDescription]);
 
   // Initialize visible columns
-  useMemo(() => {
-    if (headers.length > 0 && visibleColumns.length === 0) {
-      setVisibleColumns(headers);
+  // Sync visible columns when headers change (e.g. from AI transformations)
+  useEffect(() => {
+    if (headers && headers.length > 0) {
+      setVisibleColumns(prev => {
+        // 1. Remove columns that no longer exist
+        const stillExists = prev.filter(h => headers.includes(h));
+
+        // 2. Identify brand new columns that weren't in our visibility list
+        const brandNew = headers.filter(h => !prev.includes(h));
+
+        // If we were previously empty, initialize with all headers
+        if (prev.length === 0) return headers;
+
+        // Reconcile: keep valid existing columns and append new ones automatically
+        // This ensures dropped columns disappear and new columns appear
+        return [...stillExists, ...brandNew];
+      });
     }
   }, [headers]);
 
@@ -589,6 +618,16 @@ export const DataStudio: React.FC<DataStudioProps> = ({
           </div>
         </div>
       </header>
+
+      {/* Dataset Metrics Bar */}
+      <div className="px-6 py-4 bg-surface-50/50 dark:bg-surface-950/20 border-b border-surface-200 dark:border-surface-800 overflow-x-auto no-scrollbar">
+        <div className="flex gap-4 min-w-max">
+          <MetricCard title="Total Observations" value={data.length.toLocaleString()} icon={Hash} colorClass="bg-indigo-600" isDarkMode={isDarkMode} />
+          <MetricCard title="Data Features" value={headers.length} icon={SlidersHorizontal} colorClass="bg-emerald-500" isDarkMode={isDarkMode} />
+          <MetricCard title="Missing Density" value={`${(Object.values(columnStats).reduce((acc, s) => acc + s.missingPercent, 0) / headers.length).toFixed(1)}%`} icon={Activity} colorClass="bg-amber-500" isDarkMode={isDarkMode} />
+          <MetricCard title="System Load" value="Optimal" icon={Zap} colorClass="bg-rose-500" isDarkMode={isDarkMode} />
+        </div>
+      </div>
 
       {/* Active Segments Bar */}
       {Object.keys(activeFilters).length > 0 && (

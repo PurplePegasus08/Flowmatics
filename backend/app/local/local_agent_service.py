@@ -101,6 +101,20 @@ class LocalAgentService(BaseAgentService):
                 state.user_message = reasoning_md + f"✅ Smart Auto-Clean complete!\n\nI've automatically improved data quality based on statistical profiling.\n\n### Reasoning Log\n{report_md}\n\n### Data Changes\n{diff}"
                 state.error, state.retry_count = None, 0
                 state.next_node = "human_input"
+            elif action == "transform":
+                script = content
+                self.push_undo(state, f"AI Transform: {script[:60]}...")
+                df = store.get_df(state.work_id)
+                new_df, err, stdout = exec_code(script, df)
+                if err:
+                    state.error = err
+                    state.user_message = reasoning_md + f"❌ Transform failed: {err}"
+                else:
+                    state.work_id = store.write_df(new_df)
+                    diff = compare_dataframes(df, new_df)
+                    state.user_message = reasoning_md + f"✅ Transformation applied successfully!\n\n### Data Changes\n{diff}" + (f"\n\n**Output:**\n```\n{stdout}\n```" if stdout else "")
+                state.error, state.retry_count = None, 0
+                state.next_node = "human_input"
             elif action == "prepare_for_ml":
                 state.last_tool = {"name": "prepareForML", "args": {}}
                 df = store.get_df(state.work_id)
@@ -120,6 +134,75 @@ class LocalAgentService(BaseAgentService):
             state.retry_count += 1
             state.next_node = "execute" if state.retry_count < state.MAX_RETRIES else "human_input"
         return state
+
+    def handle_action(self, state: AgentState, res: dict) -> AgentState:
+        """Process actions from model response (auto_clean, prepare_for_ml, etc.)"""
+        try:
+            action = res.get("action")
+            content = res.get("content", "")
+            reasoning = res.get("reasoning", "")
+            state.suggested_next_steps = res.get("suggested_next_steps", [])
+            
+            reasoning_md = f"> [!TIP]\n> **AI Reasoning:** {reasoning}\n\n" if reasoning else ""
+
+            if action in ("answer", "clarify"):
+                state.user_message = reasoning_md + content
+                state.error, state.retry_count = None, 0
+                state.next_node = "human_input"
+            elif action == "visualize":
+                state.last_tool = {"name": "generateVisualization", "args": {k: res.get(k, "") for k in ["title", "type", "xAxisKey", "yAxisKey"]}}
+                state.user_message = reasoning_md + (res.get("explanation") or "Generating visualization...")
+                state.next_node = "human_input"
+            elif action == "code":
+                state.last_tool = {"name": "runPythonAnalysis", "args": {"script": content, "explanation": res.get("explanation", "")}}
+                state.user_message = reasoning_md + (res.get("explanation") or "I've written some code to process the data.")
+                state.next_node = "human_input"
+            elif action == "auto_clean":
+                state.last_tool = {"name": "autoCleanData", "args": {}}
+                df = store.get_df(state.work_id)
+                self.push_undo(state, "Smart Auto-Clean")
+                from app.services.auto_clean_service import auto_clean_service
+                new_df, report = auto_clean_service.auto_prepare(df)
+                state.work_id = store.write_df(new_df)
+                diff = compare_dataframes(df, new_df)
+                
+                report_md = "\n".join([f"- **{r['action']}** on `{r.get('column', r.get('columns'))}`: {r['reason']}" for r in report])
+                state.user_message = reasoning_md + f"✅ Smart Auto-Clean complete!\n\nI've automatically improved data quality based on statistical profiling.\n\n### Reasoning Log\n{report_md}\n\n### Data Changes\n{diff}"
+                state.error, state.retry_count = None, 0
+                state.next_node = "human_input"
+            elif action == "transform":
+                script = content
+                self.push_undo(state, f"AI Transform: {script[:60]}...")
+                df = store.get_df(state.work_id)
+                new_df, err, stdout = exec_code(script, df)
+                if err:
+                    state.error = err
+                    state.user_message = reasoning_md + f"❌ Transform failed: {err}"
+                else:
+                    state.work_id = store.write_df(new_df)
+                    diff = compare_dataframes(df, new_df)
+                    state.user_message = reasoning_md + f"✅ Transformation applied successfully!\n\n### Data Changes\n{diff}" + (f"\n\n**Output:**\n```\n{stdout}\n```" if stdout else "")
+                state.error, state.retry_count = None, 0
+                state.next_node = "human_input"
+            elif action == "prepare_for_ml":
+                state.last_tool = {"name": "prepareForML", "args": {}}
+                df = store.get_df(state.work_id)
+                self.push_undo(state, "Prepare for ML")
+                from app.services.feature_engineer_service import feature_engineer_service
+                new_df, report = feature_engineer_service.prepare_for_ml(df)
+                state.work_id = store.write_df(new_df)
+                diff = compare_dataframes(df, new_df)
+                
+                report_md = "\n".join([f"- **{r['action']}** on `{r.get('column', 'Dataset')}`: {r['reason']}" for r in report])
+                state.user_message = reasoning_md + f"✅ ML Preparation complete!\n\nDataset is now fully numeric and scaled, ready for training.\n\n### Engineering Logic\n{report_md}\n\n### Data Changes\n{diff}"
+                state.error, state.retry_count = None, 0
+                state.next_node = "human_input"
+            return state
+        except Exception as e:
+            logger.error(f"Local action handler error: {e}")
+            state.error = str(e)
+            state.next_node = "human_input"
+            return state
 
     async def stream_execute(self, state: AgentState):
         if not self.is_available():
@@ -142,6 +225,10 @@ class LocalAgentService(BaseAgentService):
                 res = json.loads(m.group(1))
             else:
                 res = {"action": "answer", "content": full_text}
+            
+            # Execute action if present (essential for persistence)
+            if isinstance(res, dict) and res.get("action") in ("auto_clean", "prepare_for_ml", "visualize", "transform"):
+                self.handle_action(state, res)
                 
             yield {"type": "final", "res": res}
             

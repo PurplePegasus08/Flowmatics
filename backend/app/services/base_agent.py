@@ -115,15 +115,20 @@ USER REQUEST: {state.user_message}
 RESPONSE FORMAT (JSON):
 {{
     "reasoning": "Direct technical rationale.",
-    "action": "answer|code|visualize|auto_clean",
-    "content": "Result content or python script",
-    "explanation": "Brief human summary",
+    "action": "answer|transform|visualize|auto_clean|prepare_for_ml",
+    "content": "Result content or python script for 'transform'",
+    "explanation": "Brief human summary of what was done",
     "suggested_next_steps": ["step 1", "step 2", "step 3"],
-    "title": "Viz Title",
+    "title": "Viz Title (only for visualize)",
     "type": "bar|line|scatter|pie|area|table|distribution|histogram",
     "xAxisKey": "col_name",
     "yAxisKey": "col_name"
 }}
+
+IMPORTANT: 
+- Use "transform" when the user asks to modify, clean, or engineer features. The code will be executed automatically.
+- Use "answer" for simple questions that don't change the data.
+- Use "visualize" to show a chart.
 """
 
     def push_undo(self, state: AgentState, desc: str):
