@@ -1,11 +1,12 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { DashboardItem, DataRow, AggregationType, SortOrder, LegendPosition } from '../types';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Label, Legend, ScatterChart, Scatter, ZAxis, Tooltip, LabelList, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Treemap, ComposedChart, Funnel, FunnelChart, Rectangle } from 'recharts';
-import { Trash2, Download, Lock, Unlock, Grid3X3, RotateCcw, Settings2, X, Type, Gauge, Hash, SlidersHorizontal, GripVertical, LayoutTemplate, Activity, Maximize2, Minimize2, LayoutGrid, Sparkles, Image as ImageIcon, FileCode, Share2, Palette } from 'lucide-react';
+import { Trash2, Download, Lock, Unlock, Grid3X3, RotateCcw, Settings2, X, Type, Gauge, Hash, SlidersHorizontal, GripVertical, LayoutTemplate, Activity, Maximize2, Minimize2, LayoutGrid, Sparkles, Image as ImageIcon, FileCode, Share2, Palette, TrendingUp } from 'lucide-react';
 import { CHART_THEMES } from './Visualization';
 import { processChartData } from '../utils/chartUtils';
 import { InsightCard } from '../components/InsightCard';
 import { MetricCard } from '../components/MetricCard';
+import { PlotlyDashboard } from './PlotlyDashboard';
 
 interface DashboardProps {
   data: DataRow[];
@@ -14,12 +15,17 @@ interface DashboardProps {
   items: DashboardItem[];
   onUpdateItem: (id: string, updates: Partial<DashboardItem>) => void;
   onRemoveItem: (id: string) => void;
-
   onNavigateToData: () => void;
   onAutoGenerate: () => void;
   onUndo: () => void;
+  onRemoveAll: () => void;
   sessionId: string;
   onAskAboutChart: (title: string) => void;
+  // Plotly AI mode
+  plotlyHtml: string | null;
+  plotlyLoading: boolean;
+  plotlyError: string | null;
+  onGeneratePlotly: () => void;
 }
 
 interface AlignmentGuide {
@@ -301,7 +307,8 @@ const DashboardChart = React.memo(({ item, data, isDarkMode }: { item: Dashboard
   );
 });
 
-export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode, items, onUpdateItem, onRemoveItem, onNavigateToData, onAutoGenerate, onUndo, sessionId, onAskAboutChart }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode, items, onUpdateItem, onRemoveItem, onNavigateToData, onAutoGenerate, onUndo, onRemoveAll, sessionId, onAskAboutChart, plotlyHtml, plotlyLoading, plotlyError, onGeneratePlotly }) => {
+  const [dashboardMode, setDashboardMode] = useState<'autoinsight' | 'plotly'>('autoinsight');
   const canvasRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
@@ -315,6 +322,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode,
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const handleExportImage = async () => {
     const dashboard = document.getElementById('dashboard-grid');
@@ -578,166 +586,236 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, headers, isDarkMode,
         <div className="flex flex-col">
           <h2 className="text-xl font-bold text-surface-900 dark:text-white flex items-center gap-3 tracking-tight leading-none">
             Workbench
-            {isLocked && <div className="px-2.5 py-0.5 bg-amber-500/10 text-amber-600 text-[9px] font-bold rounded-md border border-amber-500/20 uppercase tracking-widest">Locked</div>}
+            {isLocked && dashboardMode === 'autoinsight' && <div className="px-2.5 py-0.5 bg-amber-500/10 text-amber-600 text-[9px] font-bold rounded-md border border-amber-500/20 uppercase tracking-widest">Locked</div>}
           </h2>
           <div className="flex items-center gap-2 mt-1">
             <Activity className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 opacity-60" />
-            <p className="text-[10px] text-surface-400 dark:text-surface-500 font-bold uppercase tracking-widest">{items.length} Active Modules</p>
+            <p className="text-[10px] text-surface-400 dark:text-surface-500 font-bold uppercase tracking-widest">
+              {dashboardMode === 'autoinsight' ? `${items.length} Active Modules` : 'AI-Powered Plotly'}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-surface-100 dark:bg-surface-900 p-1 rounded-xl shadow-inner border border-surface-200 dark:border-surface-700">
+          {/* Mode toggle pill */}
+          <div className="flex items-center gap-1 bg-surface-100 dark:bg-surface-900 p-1 rounded-xl shadow-inner border border-surface-200 dark:border-surface-700">
             <button
-              onClick={() => setIsLocked(!isLocked)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${isLocked ? 'bg-white dark:bg-surface-700 text-surface-900 dark:text-white shadow-sm' : 'text-surface-500 hover:text-surface-800 dark:hover:text-surface-300'}`}
+              onClick={() => setDashboardMode('autoinsight')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${dashboardMode === 'autoinsight'
+                  ? 'bg-white dark:bg-surface-700 text-surface-900 dark:text-white shadow-sm'
+                  : 'text-surface-500 hover:text-surface-800 dark:hover:text-surface-300'
+                }`}
             >
-              {isLocked ? <><Lock className="w-3.5 h-3.5" /> Locked</> : <><Unlock className="w-3.5 h-3.5" /> Fluid</>}
-            </button>
-            <div className="w-px h-6 bg-surface-200 dark:bg-surface-700 mx-1"></div>
-            <button onClick={() => setShowGrid(!showGrid)} className={`p-2 rounded-lg transition-all ${showGrid ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' : 'text-surface-400 hover:bg-white dark:hover:bg-surface-700'}`} title="Toggle Grid"><Grid3X3 className="w-4 h-4" /></button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportImage}
-              disabled={isExporting}
-              className="px-4 py-2 bg-white dark:bg-surface-800 hover:bg-surface-50 dark:hover:bg-surface-700 text-surface-600 dark:text-surface-300 rounded-xl border border-surface-200 dark:border-surface-700 transition-all flex items-center gap-2 shadow-sm active:scale-95 text-[10px] font-bold uppercase tracking-wider"
-            >
-              <ImageIcon className={`w-3.5 h-3.5 ${isExporting ? 'animate-pulse' : ''}`} />
-              {isExporting ? 'Capturing...' : 'Image'}
+              <LayoutGrid className="w-3.5 h-3.5" />
+              AutoInsight
             </button>
             <button
-              onClick={handleExportHTML}
-              className="px-4 py-2 bg-surface-900 dark:bg-surface-100 hover:bg-surface-800 dark:hover:bg-white text-white dark:text-surface-900 rounded-xl transition-all shadow-md flex items-center gap-2 active:scale-95 text-[10px] font-bold uppercase tracking-wider"
+              onClick={() => setDashboardMode('plotly')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${dashboardMode === 'plotly'
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/30'
+                  : 'text-surface-500 hover:text-surface-800 dark:hover:text-surface-300'
+                }`}
             >
-              <FileCode className="w-3.5 h-3.5" />
-              Report
+              <Sparkles className="w-3.5 h-3.5" />
+              Plotly AI
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button onClick={onUndo} className="p-2.5 bg-white dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 text-surface-400 hover:text-indigo-600 transition-all shadow-sm"><RotateCcw className="w-4 h-4" /></button>
-            <button onClick={handleAutoLayout} className="p-2.5 bg-white dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 text-surface-400 hover:text-indigo-600 transition-all shadow-sm" title="Auto-Layout"><LayoutGrid className="w-4 h-4" /></button>
-          </div>
+          {/* AutoInsight toolbar — hidden in Plotly mode */}
+          {dashboardMode === 'autoinsight' && (
+            <>
+              <div className="flex items-center gap-2 bg-surface-100 dark:bg-surface-900 p-1 rounded-xl shadow-inner border border-surface-200 dark:border-surface-700">
+                <button
+                  onClick={() => setIsLocked(!isLocked)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${isLocked ? 'bg-white dark:bg-surface-700 text-surface-900 dark:text-white shadow-sm' : 'text-surface-500 hover:text-surface-800 dark:hover:text-surface-300'}`}
+                >
+                  {isLocked ? <><Lock className="w-3.5 h-3.5" /> Locked</> : <><Unlock className="w-3.5 h-3.5" /> Fluid</>}
+                </button>
+                <div className="w-px h-6 bg-surface-200 dark:bg-surface-700 mx-1"></div>
+                <button onClick={() => setShowGrid(!showGrid)} className={`p-2 rounded-lg transition-all ${showGrid ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' : 'text-surface-400 hover:bg-white dark:hover:bg-surface-700'}`} title="Toggle Grid"><Grid3X3 className="w-4 h-4" /></button>
+              </div>
 
-          <button
-            onClick={onAutoGenerate}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all shadow-lg active:scale-95 ml-2"
-          >
-            <Sparkles className="w-4 h-4 text-white/50" />
-            Auto-Insights
-          </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportImage}
+                  disabled={isExporting}
+                  className="px-4 py-2 bg-white dark:bg-surface-800 hover:bg-surface-50 dark:hover:bg-surface-700 text-surface-600 dark:text-surface-300 rounded-xl border border-surface-200 dark:border-surface-700 transition-all flex items-center gap-2 shadow-sm active:scale-95 text-[10px] font-bold uppercase tracking-wider"
+                >
+                  <ImageIcon className={`w-3.5 h-3.5 ${isExporting ? 'animate-pulse' : ''}`} />
+                  {isExporting ? 'Capturing...' : 'Image'}
+                </button>
+                <button
+                  onClick={handleExportHTML}
+                  className="px-4 py-2 bg-surface-900 dark:bg-surface-100 hover:bg-surface-800 dark:hover:bg-white text-white dark:text-surface-900 rounded-xl transition-all shadow-md flex items-center gap-2 active:scale-95 text-[10px] font-bold uppercase tracking-wider"
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  Report
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button onClick={onUndo} className="p-2.5 bg-white dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 text-surface-400 hover:text-indigo-600 transition-all shadow-sm"><RotateCcw className="w-4 h-4" /></button>
+                <button onClick={handleAutoLayout} className="p-2.5 bg-white dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 text-surface-400 hover:text-indigo-600 transition-all shadow-sm" title="Auto-Layout"><LayoutGrid className="w-4 h-4" /></button>
+                <button
+                  onClick={() => items.length > 0 && setShowClearConfirm(true)}
+                  disabled={items.length === 0}
+                  className={`p-2.5 bg-white dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 text-surface-400 hover:text-red-500 transition-all shadow-sm relative ${items.length === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                  title="Remove All"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {showClearConfirm && (
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-surface-800 rounded-2xl border border-surface-200 dark:border-surface-700 shadow-2xl p-4 z-[100] animate-slide-up">
+                      <p className="text-[10px] font-bold text-surface-900 dark:text-white mb-3 uppercase tracking-widest text-center">Clear Dashboard?</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setShowClearConfirm(false); }}
+                          className="flex-1 py-2 bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 rounded-lg text-[9px] font-bold uppercase tracking-wider hover:bg-surface-200"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onRemoveAll(); setShowClearConfirm(false); }}
+                          className="flex-1 py-2 bg-red-500 text-white rounded-lg text-[9px] font-bold uppercase tracking-wider hover:bg-red-600 shadow-md shadow-red-500/20"
+                        >
+                          Purge
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </button>
+              </div>
+
+              <button
+                onClick={onAutoGenerate}
+                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all shadow-lg active:scale-95 ml-2"
+              >
+                <Sparkles className="w-4 h-4 text-white/50" />
+                Auto-Insights
+              </button>
+            </>
+          )}
         </div>
       </header>
 
-      <div ref={canvasRef} id="dashboard-grid" className={`flex-1 overflow-auto relative bg-surface-50 dark:bg-surface-900/50 ${showGrid ? 'canvas-grid' : ''}`} style={{ backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px` }}>
+      {dashboardMode === 'plotly' ? (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <PlotlyDashboard
+            html={plotlyHtml}
+            isLoading={plotlyLoading}
+            error={plotlyError}
+            isDarkMode={isDarkMode}
+            onGenerate={onGeneratePlotly}
+          />
+        </div>
+      ) : (
+        <div ref={canvasRef} id="dashboard-grid" className={`flex-1 overflow-auto relative bg-surface-50 dark:bg-surface-900/50 ${showGrid ? 'canvas-grid' : ''}`} style={{ backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px` }}>
 
-        {items.map(item => {
-          const isDragging = draggingId === item.id;
-          const isResizing = resizingId === item.id;
-          const isEditing = editingId === item.id;
+          {items.map(item => {
+            const isDragging = draggingId === item.id;
+            const isResizing = resizingId === item.id;
+            const isEditing = editingId === item.id;
 
-          return (
-            <div
-              key={item.id}
-              className={`absolute flex flex-col group transition-[box-shadow,transform] duration-200 ${isDragging ? 'z-[999] opacity-70' : ''}`}
-              style={{
-                left: item.x,
-                top: item.y,
-                width: item.width,
-                height: item.height,
-                zIndex: item.zIndex || 10,
-                transition: isDragging || isResizing ? 'none' : 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
-              }}
-            >
+            return (
               <div
-                onMouseDown={(e) => {
-                  if (isLocked || item.isLocked) return;
-                  const rect = canvasRef.current!.getBoundingClientRect();
-                  setDraggingId(item.id);
-                  setDragOffset({ x: e.clientX - rect.left + canvasRef.current!.scrollLeft - item.x, y: e.clientY - rect.top + canvasRef.current!.scrollTop - item.y });
+                key={item.id}
+                className={`absolute flex flex-col group transition-[box-shadow,transform] duration-200 ${isDragging ? 'z-[999] opacity-70' : ''}`}
+                style={{
+                  left: item.x,
+                  top: item.y,
+                  width: item.width,
+                  height: item.height,
+                  zIndex: item.zIndex || 10,
+                  transition: isDragging || isResizing ? 'none' : 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
                 }}
-                className={`h-11 flex items-center justify-between px-4 bg-white/90 dark:bg-surface-800/90 backdrop-blur-md rounded-t-2xl border-x border-t border-surface-200 dark:border-surface-700 shadow-sm ${isLocked || item.isLocked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
               >
-                <div className="flex items-center gap-3">
-                  <GripVertical className={`w-4 h-4 text-surface-200 dark:text-surface-600 ${!isLocked && !item.isLocked ? 'group-hover:text-indigo-400' : ''}`} />
-                  <span className="text-[10px] font-bold text-surface-500 dark:text-surface-400 uppercase tracking-widest truncate max-w-[160px]">{item.title}</span>
-                </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-                  <button onClick={() => setExpandedId(expandedId === item.id ? null : item.id)} className="p-2 rounded-lg text-surface-400 hover:text-indigo-600 hover:bg-surface-50 dark:hover:bg-surface-700 transition-all">
-                    {expandedId === item.id ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                  </button>
-                  <button onClick={() => onUpdateItem(item.id, { isLocked: !item.isLocked })} className={`p-2 rounded-lg transition-all ${item.isLocked ? 'text-amber-500 bg-amber-500/10 border border-amber-500/20' : 'text-surface-400 hover:text-indigo-600 hover:bg-surface-50 dark:hover:bg-surface-700'}`}>{item.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}</button>
-                  <button onClick={() => setEditingId(isEditing ? null : item.id)} className={`p-2 rounded-lg transition-all ${isEditing ? 'text-indigo-600 bg-indigo-50 dark:bg-surface-700 border border-indigo-100' : 'text-surface-400 hover:text-indigo-600 hover:bg-surface-50 dark:hover:bg-surface-700'}`}><Settings2 className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => onRemoveItem(item.id)} className="p-2 rounded-lg text-surface-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-              </div>
-
-              <div className={`flex-1 min-h-0 relative bg-white/60 dark:bg-surface-800/60 backdrop-blur-sm border border-surface-200 dark:border-surface-700 rounded-b-2xl shadow-material transition-all p-7 overflow-hidden ${isDragging ? 'ring-2 ring-indigo-500/20 shadow-material-hover' : ''}`}>
-                <button
-                  onClick={() => onAskAboutChart(item.title)}
-                  className="absolute top-4 right-4 z-50 p-2 bg-white/80 dark:bg-surface-700/80 backdrop-blur-sm hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-200 dark:border-indigo-800 shadow-lg opacity-0 group-hover:opacity-100 transition-all hover:scale-110"
-                  title="Ask AI about this chart"
+                <div
+                  onMouseDown={(e) => {
+                    if (isLocked || item.isLocked) return;
+                    const rect = canvasRef.current!.getBoundingClientRect();
+                    setDraggingId(item.id);
+                    setDragOffset({ x: e.clientX - rect.left + canvasRef.current!.scrollLeft - item.x, y: e.clientY - rect.top + canvasRef.current!.scrollTop - item.y });
+                  }}
+                  className={`h-11 flex items-center justify-between px-4 bg-white/90 dark:bg-surface-800/90 backdrop-blur-md rounded-t-2xl border-x border-t border-surface-200 dark:border-surface-700 shadow-sm ${isLocked || item.isLocked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
                 >
-                  <Sparkles className="w-4 h-4" />
-                </button>
-                {item.type === 'metric' ? (
-                  <MetricCard
-                    title={item.title}
-                    value={(processChartData(data, item)[0])?.value?.toLocaleString() ?? '0'}
-                    isDarkMode={isDarkMode}
-                    growth={item.growth}
-                    subValue={item.subValue}
-                    subLabel={item.subLabel}
-                  />
-                ) : (
-                  <DashboardChart item={item} data={data} isDarkMode={isDarkMode} />
-                )}
+                  <div className="flex items-center gap-3">
+                    <GripVertical className={`w-4 h-4 text-surface-200 dark:text-surface-600 ${!isLocked && !item.isLocked ? 'group-hover:text-indigo-400' : ''}`} />
+                    <span className="text-[10px] font-bold text-surface-500 dark:text-surface-400 uppercase tracking-widest truncate max-w-[160px]">{item.title}</span>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                    <button onClick={() => setExpandedId(expandedId === item.id ? null : item.id)} className="p-2 rounded-lg text-surface-400 hover:text-indigo-600 hover:bg-surface-50 dark:hover:bg-surface-700 transition-all">
+                      {expandedId === item.id ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                    </button>
+                    <button onClick={() => onUpdateItem(item.id, { isLocked: !item.isLocked })} className={`p-2 rounded-lg transition-all ${item.isLocked ? 'text-amber-500 bg-amber-500/10 border border-amber-500/20' : 'text-surface-400 hover:text-indigo-600 hover:bg-surface-50 dark:hover:bg-surface-700'}`}>{item.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}</button>
+                    <button onClick={() => setEditingId(isEditing ? null : item.id)} className={`p-2 rounded-lg transition-all ${isEditing ? 'text-indigo-600 bg-indigo-50 dark:bg-surface-700 border border-indigo-100' : 'text-surface-400 hover:text-indigo-600 hover:bg-surface-50 dark:hover:bg-surface-700'}`}><Settings2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => onRemoveItem(item.id)} className="p-2 rounded-lg text-surface-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
 
-                {isEditing && (
-                  <div className="absolute inset-0 z-50 bg-white/98 dark:bg-surface-800/98 backdrop-blur-sm p-7 overflow-y-auto animate-slide-up custom-scrollbar text-xs">
-                    <div className="flex items-center justify-between mb-8 pb-3 border-b border-surface-100 dark:border-surface-700">
-                      <h4 className="font-bold text-surface-900 dark:text-white uppercase tracking-widest text-base">Module Logic</h4>
-                      <button onClick={() => setEditingId(null)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl transition-all"><X className="w-5 h-5 text-surface-400" /></button>
-                    </div>
-                    <div className="space-y-6">
-                      <div>
-                        <label className="block text-[10px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest mb-2 ml-1">Header Title</label>
-                        <input type="text" value={item.title} onChange={(e) => onUpdateItem(item.id, { title: e.target.value })} className="w-full bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl px-4 py-3 text-surface-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+                <div className={`flex-1 min-h-0 relative bg-white/60 dark:bg-surface-800/60 backdrop-blur-sm border border-surface-200 dark:border-surface-700 rounded-b-2xl shadow-material transition-all p-7 overflow-hidden ${isDragging ? 'ring-2 ring-indigo-500/20 shadow-material-hover' : ''}`}>
+                  <button
+                    onClick={() => onAskAboutChart(item.title)}
+                    className="absolute top-4 right-4 z-50 p-2 bg-white/80 dark:bg-surface-700/80 backdrop-blur-sm hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-200 dark:border-indigo-800 shadow-lg opacity-0 group-hover:opacity-100 transition-all hover:scale-110"
+                    title="Ask AI about this chart"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                  </button>
+                  {item.type === 'metric' ? (
+                    <MetricCard
+                      title={item.title}
+                      value={(processChartData(data, item)[0])?.value?.toLocaleString() ?? '0'}
+                      isDarkMode={isDarkMode}
+                      growth={item.growth}
+                      subValue={item.subValue}
+                      subLabel={item.subLabel}
+                    />
+                  ) : (
+                    <DashboardChart item={item} data={data} isDarkMode={isDarkMode} />
+                  )}
+
+                  {isEditing && (
+                    <div className="absolute inset-0 z-50 bg-white/98 dark:bg-surface-800/98 backdrop-blur-sm p-7 overflow-y-auto animate-slide-up custom-scrollbar text-xs">
+                      <div className="flex items-center justify-between mb-8 pb-3 border-b border-surface-100 dark:border-surface-700">
+                        <h4 className="font-bold text-surface-900 dark:text-white uppercase tracking-widest text-base">Module Logic</h4>
+                        <button onClick={() => setEditingId(null)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl transition-all"><X className="w-5 h-5 text-surface-400" /></button>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-6">
                         <div>
-                          <label className="block text-[10px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest mb-2 ml-1">Aggregate</label>
-                          <select value={item.aggregation || 'sum'} onChange={(e) => onUpdateItem(item.id, { aggregation: e.target.value as AggregationType })} className="w-full bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl px-3 py-3 font-bold outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500/20">
-                            <option value="sum">Sum</option><option value="avg">Avg</option><option value="count">Count</option><option value="min">Min</option><option value="max">Max</option>
-                          </select>
+                          <label className="block text-[10px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest mb-2 ml-1">Header Title</label>
+                          <input type="text" value={item.title} onChange={(e) => onUpdateItem(item.id, { title: e.target.value })} className="w-full bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl px-4 py-3 text-surface-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest mb-2 ml-1">Ordering</label>
-                          <select value={item.sortByValue || 'none'} onChange={(e) => onUpdateItem(item.id, { sortByValue: e.target.value as SortOrder })} className="w-full bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl px-3 py-3 font-bold outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500/20">
-                            <option value="none">Default</option><option value="asc">Ascending</option><option value="desc">Descending</option>
-                          </select>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest mb-2 ml-1">Aggregate</label>
+                            <select value={item.aggregation || 'sum'} onChange={(e) => onUpdateItem(item.id, { aggregation: e.target.value as AggregationType })} className="w-full bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl px-3 py-3 font-bold outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500/20">
+                              <option value="sum">Sum</option><option value="avg">Avg</option><option value="count">Count</option><option value="min">Min</option><option value="max">Max</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest mb-2 ml-1">Ordering</label>
+                            <select value={item.sortByValue || 'none'} onChange={(e) => onUpdateItem(item.id, { sortByValue: e.target.value as SortOrder })} className="w-full bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl px-3 py-3 font-bold outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500/20">
+                              <option value="none">Default</option><option value="asc">Ascending</option><option value="desc">Descending</option>
+                            </select>
+                          </div>
                         </div>
+                        <button onClick={() => setEditingId(null)} className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[11px] font-bold uppercase tracking-widest shadow-lg hover:bg-indigo-700 transition-all active:scale-95">Commit Changes</button>
                       </div>
-                      <button onClick={() => setEditingId(null)} className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[11px] font-bold uppercase tracking-widest shadow-lg hover:bg-indigo-700 transition-all active:scale-95">Commit Changes</button>
                     </div>
+                  )}
+                </div>
+
+                {!isLocked && !item.isLocked && (
+                  <div
+                    onMouseDown={(e) => { e.stopPropagation(); setResizingId(item.id); setStartMouse({ x: e.clientX, y: e.clientY }); setInitialDim({ w: item.width, h: item.height }); }}
+                    className="absolute bottom-3 right-3 w-8 h-8 cursor-se-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10"
+                  >
+                    <div className="w-3.5 h-3.5 border-r-2 border-b-2 border-indigo-500/50 rounded-sm"></div>
                   </div>
                 )}
               </div>
-
-              {!isLocked && !item.isLocked && (
-                <div
-                  onMouseDown={(e) => { e.stopPropagation(); setResizingId(item.id); setStartMouse({ x: e.clientX, y: e.clientY }); setInitialDim({ w: item.width, h: item.height }); }}
-                  className="absolute bottom-3 right-3 w-8 h-8 cursor-se-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10"
-                >
-                  <div className="w-3.5 h-3.5 border-r-2 border-b-2 border-indigo-500/50 rounded-sm"></div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {expandedId && (
         <div className="fixed inset-0 z-[2000] bg-surface-950/80 backdrop-blur-sm flex items-center justify-center p-8 animate-fade-in">

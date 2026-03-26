@@ -97,6 +97,12 @@ class APIClient {
         return this.fetchJson<any>(`/api/dashboard/generate/${sessionId}`);
     }
 
+    async generatePlotlyDashboard(sessionId: string): Promise<{ html: string }> {
+        return this.fetchJson<{ html: string }>(`/api/dashboard/plotly/${sessionId}`, {
+            method: 'POST',
+        });
+    }
+
     async getInsights(sessionId: string) {
         return this.fetchJson<any>(`/api/insights/summary/${sessionId}`);
     }
