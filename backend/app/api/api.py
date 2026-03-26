@@ -24,6 +24,7 @@ from app.services.agent_service import agent_service
 from app.services.execution_service import exec_code, compare_dataframes
 from app.services.processing_service import processing_service
 from app.services.dashboard_service import dashboard_service
+from app.services.llm_dashboard_service import llm_dashboard_service
 from app.services.auto_clean_service import auto_clean_service
 from app.services.insight_engine import insight_engine
 from app.services.feature_engineer_service import feature_engineer_service
@@ -484,6 +485,25 @@ async def generate_dashboard(session_id: str):
         return {"charts": charts}
     except Exception as e:
         logger.error(f"Dashboard gen error: {e}")
+        raise HTTPException(500, sanitize_error_message(e))
+
+
+@app.post("/api/dashboard/plotly/{session_id}", summary="Generate LLM Plotly dashboard", tags=["Dashboard"])
+async def generate_plotly_dashboard(session_id: str):
+    """
+    Ask the LLM to generate a complete, self-contained Plotly.js HTML dashboard
+    tailored to the uploaded dataset. Returns {'html': '<full html string>'}.
+    """
+    state = session_service.load_session(session_id)
+    if not state or not state.work_id:
+        raise HTTPException(404, "Session not found")
+
+    try:
+        df = store.get_df(state.work_id)
+        html = llm_dashboard_service.generate(df)
+        return {"html": html}
+    except Exception as e:
+        logger.error(f"Plotly dashboard gen error: {e}", exc_info=True)
         raise HTTPException(500, sanitize_error_message(e))
 
 
